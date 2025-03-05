@@ -133,18 +133,10 @@ while iteration <= max_iters and UB-LB>=0.0001:
         multipliers = subproblem.getDual(constraints)
         multipliers1 = subproblem.getDual(constraints1)
         optimality_cut = xp.Sum(
-            multipliers[i] * (
-                    xp.Sum(
-                        (xp_solution[q]['X' if k == 0 else 'Y'] - xp_solution[p]['X' if k == 0 else 'Y']) ** 2 for k in range(d)
-                    ) - spq_solution[p, q] ** 2
-            ) for i, (p, q) in enumerate((p, q) for p in X for q in X if p < q)
-        ) + xp.Sum(
             multipliers1[j] * (
-                    xp.Sum(
-                        (xp_solution[q]['X' if k == 0 else 'Y'] - coordinates_p[p]['X' if k == 0 else 'Y']) ** 2 for k in
-                        range(d)
-                    ) - tpq_solution[p, q] ** 2
-            ) for j, (p, q) in enumerate((p, q) for p in P for q in X)
+                    xp.Sum(-coordinates_p[p]['X' if k == 0 else 'Y'] for k in range(d)) ** 2
+            )
+            for j, (p, q) in enumerate((p, q) for p in P for q in X)
         ) <= theta
         problem.addConstraint(optimality_cut)
         print(f"feasibility cut: {optimality_cut}")
@@ -159,19 +151,11 @@ while iteration <= max_iters and UB-LB>=0.0001:
         farkas_multipliers1 = subproblem.getdualray(constraints1)
         print(f"Farkas Multipliers: {farkas_multipliers} {farkas_multipliers1}  ")
 
-        feasibility_cut = xp.Sum(
-            farkas_multipliers[i] * (
-                    xp.Sum(
-                        (xp_solution[q]['X' if k == 0 else 'Y'] - xp_solution[p]['X' if k == 0 else 'Y']) ** 2 for k in range(d)
-                    ) - spq[p, q] ** 2
-            ) for i, (p, q) in enumerate((p, q) for p in X for q in X if p < q)
-        ) + xp.Sum(
-            farkas_multipliers1[j] * (
-                    xp.Sum(
-                        (xp_solution[q]['X' if k == 0 else 'Y'] - coordinates_p[p]['X' if k == 0 else 'Y']) ** 2 for k in
-                        range(d)
-                    ) - tpq[p, q] ** 2
-            ) for j, (p, q) in enumerate((p, q) for p in P for q in X)
+        feasibility_cut = + xp.Sum(
+            multipliers1[j] * (
+                    xp.Sum(-coordinates_p[p]['X' if k == 0 else 'Y'] for k in range(d)) ** 2
+            )
+            for j, (p, q) in enumerate((p, q) for p in P for q in X)
         ) <= 0
         problem.addConstraint(feasibility_cut)
         print(f"Aggiunto feasibility cut: {feasibility_cut}")
@@ -204,3 +188,4 @@ plt.xlabel("X")
 plt.ylabel("Y")
 plt.grid(True)
 plt.show()
+
