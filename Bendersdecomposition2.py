@@ -8,7 +8,7 @@ import time
 start_time = time.time()
 
 # Read the data from CSV
-data = pd.read_csv('istanza4.csv', sep='\s+')
+data = pd.read_csv('istanza2.csv', sep='\s+')
 data = data.drop(data.columns[0], axis=1)
 data = data.reset_index()
 
@@ -74,23 +74,21 @@ problem.setObjective(obj, sense=xp.minimize)
 for p in X:
    for q in X:
      if p<q:
-        # Vincolo SOC riformulato
         lhs = xp.Sum((xp_var[q]['X' if k == 0 else 'Y'] - xp_var[p]['X' if k == 0 else 'Y' ]) ** 2 for k in range(d))
         problem.addConstraint(lhs <= spq[p, q]**2)
 for p in P:
     for q in X:
          lhs2 = xp.Sum((xp_var[q]['X' if k == 0 else 'Y'] - coordinates_p[p]['X' if k == 0 else 'Y']) ** 2 for k in range(d))
          problem.addConstraint(lhs2 <= tpq[p, q] ** 2)
-
+status=xp.lp_infeas
 max_iters = 1000
 UB=100
 LB=0
 iteration =0
-while iteration <= max_iters and UB-LB>=0.0001:
+while iteration <= max_iters:
     print(f"\nIterazione {iteration + 1}")
 
     problem.solve()
-    # Ottieni e stampa il valore della funzione obiettivo
     LB = problem.getObjVal()
     status = problem.getProbStatus()
     if status == xp.lp_optimal:
@@ -104,8 +102,8 @@ while iteration <= max_iters and UB-LB>=0.0001:
     else:
         print(f"Stato del problema: {status}")
 
-    ypq = {(p, q): xp.var(vartype=xp.binary) for p in P for q in X}
-    zpq = {(p, q): xp.var(vartype=xp.binary) for p in X for q in X}
+    ypq = {(p, q): xp.var(vartype=xp.continuous, lb=0, ub=1) for p in P for q in X}
+    zpq = {(p, q): xp.var(vartype=xp.continuous,lb=0, ub=1) for p in X for q in X}
 
     subproblem = xp.problem(name="Subproblem")
     subproblem.addVariable([ypq[key] for key in ypq])
@@ -142,7 +140,7 @@ while iteration <= max_iters and UB-LB>=0.0001:
         constraints5.append(constraint3)
     for p in P:
         for q in X:
-            constraint4=wpq_solution[p, q] >= tpq_solution[p, q] - Mp[p] * (1 - ypq[p, q])
+            constraint4= wpq_solution[p, q] >= tpq_solution[p, q] - Mp[p] * (1 - ypq[p, q])
             subproblem.addConstraint(constraint4)
             constraints.append(constraint4)
     for p in X:
@@ -150,11 +148,13 @@ while iteration <= max_iters and UB-LB>=0.0001:
             subproblem.addConstraint(vpq_solution[p, q] >= spq_solution[p, q] - M * (1 - zpq[p, q]))
 
     # Risoluzione del problema
+    subproblem.setControl("presolve", 0)  # Disabilita il presolve per evitare modifiche al problema
     subproblem.solve()
     UB = subproblem.getObjVal()
+    print("UB", UB)
     status = subproblem.getProbStatus()
     print(subproblem.getProbStatusString())
-    if status == xp.mip_optimal:
+    if status == xp.lp_optimal:
         ypq_solution = {key: problem.getSolution(ypq[key]) for key in ypq}
         zpq_solution = {key: problem.getSolution(zpq[key]) for key in zpq}
 
@@ -165,28 +165,26 @@ while iteration <= max_iters and UB-LB>=0.0001:
     if subproblem.getProbStatus() == xp.lp_infeas:
         print(subproblem.getProbStatus())
         print("Subproblem infeasible! Generazione di un feasibility cut.")
+        num_constraints = subproblem.attributes.rows
 
-        farkas_multipliers= subproblem.getdualray(constraints)
-        farkas_multipliers1 = subproblem.getdualray(constraints1)
-        farkas_multipliers2 = subproblem.getdualray(constraints2)
-        farkas_multipliers3 = subproblem.getdualray(constraints3)
-        farkas_multipliers4 = subproblem.getdualray(constraints4)
-        farkas_multipliers5 = subproblem.getdualray(constraints5)
-        print(f"Farkas Multipliers: {farkas_multipliers} {farkas_multipliers1} {farkas_multipliers2} {farkas_multipliers3}\
-            {farkas_multipliers4} {farkas_multipliers5}" )
+        farkas_multipliers = [10.0] * num_constraints
+        subproblem.getdualray(farkas_multipliers)
+        print(f"Farkas Multipliers: {farkas_multipliers} " )
+        k = sum(1 for _ in P for _ in X)
+        u = sum(1 for p in X for q in X if p < q)
 
         #Costruisci il feasibility cut per tutti i vincoli
         feasibility_cut = (xp.Sum(
             farkas_multipliers[i] * (-wpq[p, q] + tpq[p, q] - Mp[p]
                                      ) for i, (p, q) in enumerate((p, q) for p in P for q in X)
         ) + xp.Sum(
-            farkas_multipliers1[j] * (-vpq + spq[p, q] - M
-            ) for j, (p, q) in enumerate((p, q) for p in X for q in X)
+            farkas_multipliers[j+k] * (-vpq[p,q] + spq[p, q] - M
+                                      ) for j, (p, q) in enumerate((p, q) for p in X for q in X if p<q )
         )+ xp.Sum(
-            farkas_multipliers2[i] for i in P
-        ) + xp.Sum(-3*farkas_multipliers3[i] for i in X)
-        +xp.Sum(-farkas_multipliers4[i] for i in X and i>1)
-        +xp.Sum(-2*farkas_multipliers5[i] for i in X) <= 0)
+            farkas_multipliers[i+u+k] for i in P
+        ) + xp.Sum(-3*farkas_multipliers[i+u+k+len(P)] for i in X)
+        +xp.Sum(-farkas_multipliers[i+u+k+len(P)+len(X)] for i in X if i > 1)
+        +xp.Sum(-2*farkas_multipliers[i+u+k+len(P)+2*len(X)-1] for i in X) <= 0)
         problem.addConstraint(feasibility_cut)
         print(f"Aggiunto feasibility cut: {feasibility_cut}")
 
