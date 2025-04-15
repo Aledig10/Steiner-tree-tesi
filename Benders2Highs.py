@@ -2,6 +2,7 @@ import xpress as xp
 import pandas as pd
 import numpy as np
 import matplotlib
+import highspy
 import matplotlib.pyplot as plt
 import time
 
@@ -22,7 +23,7 @@ X = range(num_steiner_nodes)  # Steiner nodes
 d = 2
 xp.init('C:/xpressmp/bin/xpauth.xpr')
 Mp=[]
-distanza =0
+distanza =0;
 for p in P:
     for z in P:
             if z != p:
@@ -57,6 +58,7 @@ tpq = {(p, q): xp.var(vartype=xp.continuous,name=f"t_{p}_{q}") for p in P for q 
 wpq = {(p, q): xp.var(vartype=xp.continuous, name=f"w_{p}_{q}")for p in P for q in X }#additive variable
 vpq = {(p, q): xp.var(vartype=xp.continuous, name=f"v_{p}_{q}") for p in X for q in X if p<q}#additive variable
 
+
 #Create the problem
 problem = xp.problem(name="problem")
 # Aggiunta delle variabili al modello
@@ -80,16 +82,16 @@ for p in P:
     for q in X:
          lhs2 = xp.Sum((xp_var[q]['X' if k == 0 else 'Y'] - coordinates_p[p]['X' if k == 0 else 'Y']) ** 2 for k in range(d))
          problem.addConstraint(lhs2 <= tpq[p, q] ** 2)
-max_iters = 30
+status=xp.lp_infeas
+max_iters = 10
 UB=100
 LB=0
 iteration =0
 while iteration <= max_iters:
     print(f"\nIterazione {iteration + 1}")
-    problem.write(f"master_{iteration}.lp")
+    problem.write("prova.lp")
     problem.solve()
     LB = problem.getObjVal()
-    print(LB)
     status = problem.getProbStatus()
     if status == xp.lp_optimal:
         xp_solution = {key: problem.getSolution(xp_var[key]) for key in xp_var}
@@ -103,6 +105,7 @@ while iteration <= max_iters:
         print("tpq:", tpq_solution)
         print("vpq:", vpq_solution)
         print("spq:", spq_solution)
+        print(problem.getObjVal())
     else:
         print(f"Stato del problema: {status}")
 
@@ -116,50 +119,51 @@ while iteration <= max_iters:
     # Funzione obiettivo
     obj = 0
     subproblem.setObjective(obj, sense=xp.minimize)
-    constraints=[]
-    constraints1=[]
-    constraints2=[]
-    constraints3=[]
-    constraints4=[]
-    constraints5=[]
+    constraints = []
+    constraints1 = []
+    constraints2 = []
+    constraints3 = []
+    constraints4 = []
+    constraints5 = []
     # constraints
     for p in P:
         for q in X:
-            constraint4= wpq_solution[p, q] - tpq_solution[p, q] + Mp[p] * (1 - ypq[p, q]) >=0
+            constraint4 = wpq_solution[p, q] - tpq_solution[p, q] + Mp[p] * (1 - ypq[p, q]) >= 0
             subproblem.addConstraint(constraint4)
             constraints.append(constraint4)
     for p in X:
         for q in X:
-            if p<q:
-                constraint5= vpq_solution[p, q] - spq_solution[p, q] + M * (1 - zpq[p, q]) >=0
+            if p < q:
+                constraint5 = vpq_solution[p, q] - spq_solution[p, q] + M * (1 - zpq[p, q]) >= 0
                 subproblem.addConstraint(constraint5)
                 constraints1.append(constraint5)
     for p in P:
-        constraint= xp.Sum(ypq[p, q] for q in X) == 1
+        constraint = xp.Sum(ypq[p, q] for q in X) == 1
         subproblem.addConstraint(constraint)
         constraints2.append(constraint)
 
     for q in X:
-        constraint1= xp.Sum(ypq[p, q] for p in P)+ xp.Sum(zpq[p, q] for p in X if p < q)  + xp.Sum(zpq[q, p] for p in X if p > q) == 3
+        constraint1 = xp.Sum(ypq[p, q] for p in P) + xp.Sum(zpq[p, q] for p in X if p < q) + xp.Sum(
+            zpq[q, p] for p in X if p > q) == 3
         subproblem.addConstraint(constraint1)
         constraints3.append(constraint1)
 
     for q in X:
         if q > 0:
-            constraint2=xp.Sum(zpq[p, q] for p in X if p < q) == 1
+            constraint2 = xp.Sum(zpq[p, q] for p in X if p < q) == 1
             subproblem.addConstraint(constraint2)
             constraints4.append(constraint2)
     for q in X:
-        constraint3=xp.Sum(ypq[p, q] for p in P) <= 2
+        constraint3 = xp.Sum(ypq[p, q] for p in P) <= 2
         subproblem.addConstraint(constraint3)
         constraints5.append(constraint3)
     for p in P:
         for q in X:
-            subproblem.addConstraint(ypq[p,q]<=1)
+            subproblem.addConstraint(ypq[p, q] <= 1)
     for p in X:
         for q in X:
-            if p<q:
-                subproblem.addConstraint(zpq[p,q]<=1)
+            if p < q:
+                subproblem.addConstraint(zpq[p, q] <= 1)
 
     print(constraints)
     print(constraints1)
@@ -167,39 +171,22 @@ while iteration <= max_iters:
     print(constraints3)
     print(constraints4)
     print(constraints5)
+    subproblem.write("modello.mps")
 
-    # Risoluzione del problema
-    subproblem.controls.presolve = 0
-    subproblem.controls.scaling = 0
-    subproblem.write(f"modello_{iteration}.lp")
-    subproblem.solve()
 
-    UB = subproblem.getObjVal()
-    print("UB", UB)
-    status = subproblem.getProbStatus()
-    print(subproblem.getProbStatusString())
-    if status == xp.lp_optimal:
-        ypq_solution = {key: problem.getSolution(ypq[key]) for key in ypq}
-        zpq_solution = {key: problem.getSolution(zpq[key]) for key in zpq}
+    model = highspy.Highs()
 
-        print("Soluzione ottimale trovata!")
-        print("tpq:", tpq_solution)
-        print("spq:", spq_solution)
-        break
-    if subproblem.getProbStatus() == xp.lp_infeas:
-        print(subproblem.getProbStatus())
-        print("Subproblem infeasible! Generazione di un feasibility cut.")
+    model.readModel('modello.mps')
+    status = model.solve()
+    model_status = model.getModelStatus()
+    print(model_status)
+    if model_status == highspy.HighsModelStatus.kInfeasible:  # Modifica in base al risultato di dir()
 
-        constraint = subproblem.getConstraint()
-        num_constraints = subproblem.attributes.rows
-        print(num_constraints)
-
-        farkas_multipliers = []
-        v=subproblem.hasdualray()
-        print(v)
-        subproblem.getdualray(farkas_multipliers)
+        statuss, hassdualray, farkas_multipliers = model.getDualRay()
+        print("Dual Ray:", farkas_multipliers)
 
         print(f"Farkas Multipliers: {farkas_multipliers} " )
+
 
         k = sum(1 for _ in P for _ in X)
         u = sum(1 for p in X for q in X if p<q)
@@ -215,24 +202,17 @@ while iteration <= max_iters:
             farkas_multipliers[i + u + k] for i in P
         ) + xp.Sum(3 * farkas_multipliers[i + u + k + len(P)] for i in X) + xp.Sum(
             farkas_multipliers[i + u + k + len(P) + len(X)] for i in X if i > 1) - xp.Sum(
-            2 * farkas_multipliers[i + u + k + len(P) + 2 * len(X) - 1] for i in X) <= 0
+            2 * farkas_multipliers[i + u + k + len(P) + 2 * len(X) - 1] for i in X) <= -1e-3
         problem.addConstraint(feasibility_cut)
 
-        violation = sum(
-            farkas_multipliers[i] * (-wpq_solution[p, q] + tpq_solution[p, q] - Mp[p]
-                                     ) for i, (p, q) in enumerate((p, q) for p in P for q in X)
-        ) + sum(
-            farkas_multipliers[j + k] * (-vpq_solution[p, q] + spq_solution[p, q] - M
-                                         ) for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q)
-        ) + sum(
-            farkas_multipliers[i + u + k] for i in P
-        ) + sum(3 * farkas_multipliers[i + u + k + len(P)] for i in X) + sum(
-            farkas_multipliers[i + u + k + len(P) + len(X)] for i in X if i > 1) - sum(
-            2 * farkas_multipliers[i + u + k + len(P) + 2 * len(X) - 1] for i in X)
-        if violation <= 1e-4:
-            print("CONVERGENZA")
-            break
+    else:
+        ypq_solution = {key: problem.getSolution(ypq[key]) for key in ypq}
+        zpq_solution = {key: problem.getSolution(zpq[key]) for key in zpq}
 
+        print("Soluzione ottimale trovata!")
+        print("tpq:", tpq_solution)
+        print("spq:", spq_solution)
+        break
     iteration=iteration+1
     print(iteration)
 end_time = time.time()
