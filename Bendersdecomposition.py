@@ -5,6 +5,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import time
 
+
 start_time = time.time()
 # Leggi i dati dal file CSV
 data = pd.read_csv('istanza5.csv', sep='\s+')
@@ -42,13 +43,12 @@ for p in P:
                             coordinates_p[p]['Y'] - coordinates_p[z]['Y']) ** 2)
                 if M < distanza1:
                     M= distanza1
-
 #Start defining the MASTER PROBLEM
 # Decision variable
 
-ypq = {(p, q): xp.var(vartype=xp.binary) for p in P for q in X}
-zpq = {(p, q): xp.var(vartype=xp.binary) for p in X for q in X }
-theta =  xp.var(vartype=xp.continuous)
+ypq = {(p, q): xp.var(vartype=xp.binary,name=f"y_{p}_{q}") for p in P for q in X}
+zpq = {(p, q): xp.var(vartype=xp.binary,name=f"z_{p}_{q}") for p in X for q in X }
+theta =  xp.var(vartype=xp.continuous,name="theta")
 
 
 problem = xp.problem(name="Master problem")
@@ -71,20 +71,20 @@ for q in X:
     )
 
 for q in X:
-    if q > 1:
+    if q > 0:
         problem.addConstraint(xp.Sum(zpq[p, q] for p in X if p < q) == 1)
 
 for q in X:
     problem.addConstraint(xp.Sum(ypq[p, q] for p in P) <= 2)
 
-
+problem.write("Master2.lp")
 max_iters = 100
 UB=100
 LB=0
 iteration = 0
 while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
     print(f"\nIterazione {iteration + 1}")
-
+    problem.write("Master1.lp")
     problem.solve()
     LB = problem.getObjVal()
     print("LB", LB)
@@ -198,13 +198,13 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
         }
 
         optimality_cut = (
-                sum(multipliers1[j] * (coord_squares[p] + (eps) ** 2)
+                - sum(multipliers1[j] * (coord_squares[p] + (1e-3) ** 2)
                     for j, (p, q) in enumerate((p, q) for p in P for q in X))
-                + xp.Sum(multipliers[j] * (eps) ** 2
+                - sum(multipliers[j] * (1e-3) ** 2
                          for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
-                - xp.Sum(multipliers2[j] * (Mp[p] * (1 - ypq[p, q]))
+                + xp.Sum(multipliers2[j] * (Mp[p] * (1 - ypq[p, q]))
                          for j, (p, q) in enumerate((p, q) for p in P for q in X))
-                - xp.Sum(multipliers3[j] * (M * (1 - zpq[p, q]))
+                + xp.Sum(multipliers3[j] * (M * (1 - zpq[p, q]))
                          for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
                 <= theta
         )
@@ -217,28 +217,32 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
     if subproblem.getProbStatus() == xp.lp_infeas:
         print(subproblem.getProbStatus())
         print("Subproblem infeasible! Generation of a feasibility cut.")
-        num_constraints = subproblem.attributes.rows
-        break
-        farkas_multipliers = [0.0] * num_constraints
+        farkas_multipliers = []
+        v = subproblem.hasdualray()
+        print(v)
         subproblem.getdualray(farkas_multipliers)
 
         print(f"Farkas Multipliers: {farkas_multipliers} ")
         k = sum(1 for _ in P for _ in X)
         u = sum(1 for p in X for q in X if p < q)
-        feasibility_cut = xp.Sum(
-            farkas_multipliers[j + u] * (
-                    xp.Sum(coordinates_p[p]['X' if k == 0 else 'Y'] for k in range(d)) ** 2 +eps**2
-            )
-            for j, (p, q) in enumerate((p, q) for p in P for q in X)
-        ) + xp.Sum(
-            farkas_multipliers[j + u + k] * (-Mp[p] * (1 - ypq[p, q])
-                                             )
-            for j, (p, q) in enumerate((p, q) for p in P for q in X)
-        ) + xp.Sum(
-            farkas_multipliers[j + u + 2 * k] * (-M * (1 - zpq[p, q])
-                                                 )
-            for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q)
-        ) <= 0
+        pairs = [(p, q) for p in P for q in X]  # Generiamo tutte le coppie (p, q)
+        coord_squares = {
+            p: sum(coordinates_p[p]['X' if k == 0 else 'Y'] ** 2 for k in range(d))
+            for p in P
+        }
+
+        feasibility_cut = (
+                sum(farkas_multipliers[j+u] * (coord_squares[p] + (1e-3) ** 2)
+                    for j, (p, q) in enumerate((p, q) for p in P for q in X))
+                + xp.Sum(farkas_multipliers[j] * (1e-3) ** 2
+                         for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
+                - xp.Sum(farkas_multipliers[j+k+u] * (Mp[p] * (1 - ypq[p, q]))
+                         for j, (p, q) in enumerate((p, q) for p in P for q in X))
+                - xp.Sum(farkas_multipliers[j+2*k+u] * (M * (1 - zpq[p, q]))
+                         for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
+                <= 0
+        )
+
         problem.addConstraint(feasibility_cut)
         print(f"Aggiunto feasibility cut: {feasibility_cut}")
     print(f"UB: {UB}, LB: {LB}, Difference: {np.abs(UB - LB) / UB}")
