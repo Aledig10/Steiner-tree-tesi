@@ -196,15 +196,20 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
             p: sum(coordinates_p[p]['X' if k == 0 else 'Y'] ** 2 for k in range(d))
             for p in P
         }
-
+        for p in P:
+            for q in X:
+                print('valore1')
+                print((coordinates_p[p]['X']-xp_solution[q]['X'])*coordinates_p[p]['X']+(coordinates_p[p]['Y']-xp_solution[q]['Y'])*coordinates_p[p]['Y'])
+                print('valore2')
+                print(np.sqrt(coordinates_p[p]['X']**2+coordinates_p[p]['Y']**2+xp_solution[q]['X']**2+xp_solution[q]['Y']**2-2*coordinates_p[p]['X']*xp_solution[q]['X']-2*coordinates_p[p]['Y']*xp_solution[q]['Y']))
         optimality_cut = (
-                - sum(multipliers1[j] * (coord_squares[p] + (1e-3) ** 2)
+                + sum(multipliers1[j] * (np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-coordinates_p[p]['X'])**2+(xp_solution[q]['Y']-coordinates_p[p]['Y'])**2)-(coordinates_p[p]['X']-xp_solution[q]['X'])*coordinates_p[p]['X']+(coordinates_p[p]['Y']-xp_solution[q]['Y'])*coordinates_p[p]['Y'])/np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-coordinates_p[p]['X'])**2+(xp_solution[q]['Y']-coordinates_p[p]['Y'])**2)
                     for j, (p, q) in enumerate((p, q) for p in P for q in X))
-                - sum(multipliers[j] * (1e-3) ** 2
+                + xp.Sum(multipliers[j] * (np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-xp_solution[p]['X'])**2+ (xp_solution[q]['Y']-xp_solution[p]['Y'])**2 )-((xp_solution[q]['Y']-xp_solution[p]['Y'])**3+(xp_solution[q]['Y']-xp_solution[p]['Y'])**3)/(np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-xp_solution[p]['X'])**2+ (xp_solution[q]['Y']-xp_solution[p]['Y'])**2 )))
                          for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
-                + xp.Sum(multipliers2[j] * (Mp[p] * (1 - ypq[p, q]))
+                - xp.Sum(multipliers2[j] * (Mp[p] * (1 - ypq[p, q]))
                          for j, (p, q) in enumerate((p, q) for p in P for q in X))
-                + xp.Sum(multipliers3[j] * (M * (1 - zpq[p, q]))
+                - xp.Sum(multipliers3[j] * (M * (1 - zpq[p, q]))
                          for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
                 <= theta
         )
@@ -221,7 +226,8 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
         v = subproblem.hasdualray()
         print(v)
         subproblem.getdualray(farkas_multipliers)
-
+        #Non può accadere che sia unfeasible
+        """
         print(f"Farkas Multipliers: {farkas_multipliers} ")
         k = sum(1 for _ in P for _ in X)
         u = sum(1 for p in X for q in X if p < q)
@@ -245,6 +251,7 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
 
         problem.addConstraint(feasibility_cut)
         print(f"Aggiunto feasibility cut: {feasibility_cut}")
+        """
     print(f"UB: {UB}, LB: {LB}, Difference: {np.abs(UB - LB) / UB}")
     print(Mp)
     print(tpq_solution)
