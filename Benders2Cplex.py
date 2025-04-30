@@ -22,7 +22,7 @@ num_steiner_nodes = len(data) - 2  # Number of Steiner Nodes
 X = range(num_steiner_nodes)  # Steiner nodes
 d = 2
 Mp = []
-distanza = 0;
+distanza = 0
 for p in P:
     for z in P:
         if z != p:
