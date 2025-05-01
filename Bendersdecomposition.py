@@ -205,7 +205,7 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
         optimality_cut = (
                 + sum(multipliers1[j] * (np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-coordinates_p[p]['X'])**2+(xp_solution[q]['Y']-coordinates_p[p]['Y'])**2)-(coordinates_p[p]['X']-xp_solution[q]['X'])*coordinates_p[p]['X']+(coordinates_p[p]['Y']-xp_solution[q]['Y'])*coordinates_p[p]['Y'])/np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-coordinates_p[p]['X'])**2+(xp_solution[q]['Y']-coordinates_p[p]['Y'])**2)
                     for j, (p, q) in enumerate((p, q) for p in P for q in X))
-                + xp.Sum(multipliers[j] * (np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-xp_solution[p]['X'])**2+ (xp_solution[q]['Y']-xp_solution[p]['Y'])**2 )-((xp_solution[q]['Y']-xp_solution[p]['Y'])**3+(xp_solution[q]['Y']-xp_solution[p]['Y'])**3)/(np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-xp_solution[p]['X'])**2+ (xp_solution[q]['Y']-xp_solution[p]['Y'])**2 )))
+                + xp.Sum(multipliers[j] * (np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-xp_solution[p]['X'])**2+ (xp_solution[q]['Y']-xp_solution[p]['Y'])**2 )-((xp_solution[q]['Y']-xp_solution[p]['Y'])**2+(xp_solution[q]['Y']-xp_solution[p]['Y'])**2)/(np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-xp_solution[p]['X'])**2+ (xp_solution[q]['Y']-xp_solution[p]['Y'])**2 )))
                          for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
                 - xp.Sum(multipliers2[j] * (Mp[p] * (1 - ypq[p, q]))
                          for j, (p, q) in enumerate((p, q) for p in P for q in X))
