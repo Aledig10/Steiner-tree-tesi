@@ -47,7 +47,7 @@ for p in P:
 # Decision variable
 
 ypq = {(p, q): xp.var(vartype=xp.binary,name=f"y_{p}_{q}") for p in P for q in X}
-zpq = {(p, q): xp.var(vartype=xp.binary,name=f"z_{p}_{q}") for p in X for q in X }
+zpq = {(p, q): xp.var(vartype=xp.binary,name=f"z_{p}_{q}") for p in X for q in X if p<q }
 theta =  xp.var(vartype=xp.continuous,name="theta")
 
 
@@ -78,7 +78,7 @@ for q in X:
     problem.addConstraint(xp.Sum(ypq[p, q] for p in P) <= 2)
 
 problem.write("Master2.lp")
-max_iters = 100
+max_iters = 10000
 UB=100
 LB=0
 iteration = 0
@@ -132,14 +132,14 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
             if p < q:
                 lhs = xp.Sum(
                     (xp_var[q]['X' if k == 0 else 'Y'] - xp_var[p]['X' if k == 0 else 'Y']) ** 2 for k in range(d))
-                constraint=-lhs+ spq[p, q] ** 2>=eps**2
+                constraint=-lhs+ spq[p, q] ** 2>=0
                 subproblem.addConstraint(constraint)
                 constraints.append(constraint)
     for p in P:
         for q in X:
             lhs2 = xp.Sum(
                 (xp_var[q]['X' if k == 0 else 'Y'] - coordinates_p[p]['X' if k == 0 else 'Y']) ** 2 for k in range(d))
-            constraint1=-lhs2+ tpq[p, q] ** 2>=eps**2
+            constraint1=-lhs2+ tpq[p, q] ** 2>=0
             subproblem.addConstraint(constraint1)
             constraints1.append(constraint1)
     for p in P:
@@ -196,17 +196,11 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
             p: sum(coordinates_p[p]['X' if k == 0 else 'Y'] ** 2 for k in range(d))
             for p in P
         }
-        for p in P:
-            for q in X:
-                print('valore1')
-                print((coordinates_p[p]['X']-xp_solution[q]['X'])*coordinates_p[p]['X']+(coordinates_p[p]['Y']-xp_solution[q]['Y'])*coordinates_p[p]['Y'])
-                print('valore2')
-                print(np.sqrt(coordinates_p[p]['X']**2+coordinates_p[p]['Y']**2+xp_solution[q]['X']**2+xp_solution[q]['Y']**2-2*coordinates_p[p]['X']*xp_solution[q]['X']-2*coordinates_p[p]['Y']*xp_solution[q]['Y']))
+        valore=(10e-3)**2*sum(multipliers1[j]for j, (p, q) in enumerate((p, q) for p in P for q in X))+(10e-3)**2*multipliers[0]
+        print("valore")
+        print(valore)
         optimality_cut = (
-                + sum(multipliers1[j] * (np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-coordinates_p[p]['X'])**2+(xp_solution[q]['Y']-coordinates_p[p]['Y'])**2)-(coordinates_p[p]['X']-xp_solution[q]['X'])*coordinates_p[p]['X']+(coordinates_p[p]['Y']-xp_solution[q]['Y'])*coordinates_p[p]['Y'])/np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-coordinates_p[p]['X'])**2+(xp_solution[q]['Y']-coordinates_p[p]['Y'])**2)
-                    for j, (p, q) in enumerate((p, q) for p in P for q in X))
-                + xp.Sum(multipliers[j] * (np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-xp_solution[p]['X'])**2+ (xp_solution[q]['Y']-xp_solution[p]['Y'])**2 )-((xp_solution[q]['Y']-xp_solution[p]['Y'])**2+(xp_solution[q]['Y']-xp_solution[p]['Y'])**2)/(np.sqrt((1e-3) ** 2+(xp_solution[q]['X']-xp_solution[p]['X'])**2+ (xp_solution[q]['Y']-xp_solution[p]['Y'])**2 )))
-                         for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
+                UB
                 - xp.Sum(multipliers2[j] * (Mp[p] * (1 - ypq[p, q]))
                          for j, (p, q) in enumerate((p, q) for p in P for q in X))
                 - xp.Sum(multipliers3[j] * (M * (1 - zpq[p, q]))
