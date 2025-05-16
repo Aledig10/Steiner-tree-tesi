@@ -78,7 +78,87 @@ for q in X:
     problem.addConstraint(xp.Sum(ypq[p, q] for p in P) <= 2)
 
 problem.write("Master2.lp")
-max_iters = 10000
+xp_var = {
+    k: {
+        'X': xp.var(vartype=xp.continuous, name=f"xp_{k}"),
+        'Y': xp.var(vartype=xp.continuous, name=f"yp_{k}")
+    }
+    for k in X
+}  # x^p in R^d
+spq = {(p, q): xp.var(vartype=xp.continuous, name=f"s_{p}_{q}") for p in X for q in X if p < q}
+tpq = {(p, q): xp.var(vartype=xp.continuous, name=f"t_{p}_{q}") for p in P for q in X}
+wpq = {(p, q): xp.var(vartype=xp.continuous, name=f"w_{p}_{q}") for p in P for q in X}
+vpq = {(p, q): xp.var(vartype=xp.continuous, name=f"v_{p}_{q}") for p in X for q in X if p < q}
+deltapq = {(p, q, coord): xp.var(vartype=xp.continuous, lb=-1e4, name=f"delta_{p}_{q}_{coord}")
+           for p in P for q in X for coord in ['X', 'Y']}
+
+gammapq = {(p, q, coord): xp.var(vartype=xp.continuous, lb=-1e4, name=f"gamma_{p}_{q}_{coord}")
+           for p in X for q in X if p < q for coord in ['X', 'Y']}
+subproblem = xp.problem(name="Subproblem")
+subproblem.addVariable([xp_var[key] for key in xp_var])
+subproblem.addVariable([spq[key] for key in spq])
+subproblem.addVariable([tpq[key] for key in tpq])
+subproblem.addVariable([wpq[key] for key in wpq])
+subproblem.addVariable([vpq[key] for key in vpq])
+subproblem.addVariable([deltapq[key] for key in deltapq])
+subproblem.addVariable([gammapq[key] for key in gammapq])
+# Objective function
+obj = (xp.Sum(vpq[p, q] for p in X for q in X if p < q) +
+       xp.Sum(wpq[p, q] for p in P for q in X))
+subproblem.setObjective(obj, sense=xp.minimize)
+constraints = []
+constraints1 = []
+constraints2 = []
+constraints3 = []
+constraints4 = []
+constraints5 = []
+constraints6 = []
+constraints7 = []
+for p in P:
+    for q in X:
+        constraint = deltapq[(p, q, 'X')] == (-coordinates_p[p]['X'] + xp_var[q]['X'])
+        subproblem.addConstraint(constraint)
+        constraints4.append(constraint)
+        constraint = deltapq[(p, q, 'Y')] == (-coordinates_p[p]['Y'] + xp_var[q]['Y'])
+        subproblem.addConstraint(constraint)
+        constraints5.append(constraint)
+for p in X:
+    for q in X:
+        if p < q:
+            constraint = gammapq[(p, q, 'X')] == (xp_var[q]['X'] - xp_var[p]['X'])
+            subproblem.addConstraint(constraint)
+            constraints6.append(constraint)
+            constraint = gammapq[(p, q, 'Y')] == (xp_var[q]['Y'] - xp_var[p]['Y'])
+            subproblem.addConstraint(constraint)
+            constraints7.append(constraint)
+
+for p in X:
+    for q in X:
+        if p < q:
+            lhs = xp.Sum(
+                (gammapq[(p, q, coord)]) ** 2 for coord in ['X', 'Y'])
+            constraint = -lhs + spq[p, q] ** 2 >= 0
+            subproblem.addConstraint(constraint)
+            constraints.append(constraint)
+for p in P:
+    for q in X:
+        lhs2 = xp.Sum(
+            (deltapq[(p, q, coord)]) ** 2 for coord in ['X', 'Y'])
+        constraint1 = -lhs2 + tpq[p, q] ** 2 >= 0
+        subproblem.addConstraint(constraint1)
+        constraints1.append(constraint1)
+for p in P:
+    for q in X:
+        constraint2 = wpq[p, q] - tpq[p, q] >= 0
+        subproblem.addConstraint(constraint2)
+        constraints2.append(constraint2)
+for p in X:
+    for q in X:
+        if p < q:
+            constraint3 = vpq[p, q] - spq[p, q] >= 0
+            subproblem.addConstraint(constraint3)
+            constraints3.append(constraint3)
+max_iters = 10
 UB=100
 LB=0
 iteration = 0
@@ -99,61 +179,30 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
     else:
         print(f"Error status: {status}")
     #There we pass to the subproblem
-    xp_var = {
-        k: {
-            'X': xp.var(vartype=xp.continuous),
-            'Y': xp.var(vartype=xp.continuous)
-        }
-        for k in X
-    }  # x^p in R^d
-    spq = {(p, q): xp.var(vartype=xp.continuous,name=f"s_{p}_{q}") for p in X for q in X if p<q}
-    tpq = {(p, q): xp.var(vartype=xp.continuous,name=f"t_{p}_{q}") for p in P for q in X}
-    wpq = {(p, q): xp.var(vartype=xp.continuous,name=f"w_{p}_{q}") for p in P for q in X}
-    vpq = {(p, q): xp.var(vartype=xp.continuous,name=f"v_{p}_{q}") for p in X for q in X if p<q}
-    eps=xp.var(lb=1e-3, ub=1e-3)
-    subproblem = xp.problem(name="Subproblem")
-    subproblem.addVariable([xp_var[key] for key in xp_var])
-    subproblem.addVariable([spq[key] for key in spq])
-    subproblem.addVariable([tpq[key] for key in tpq])
-    subproblem.addVariable([wpq[key] for key in wpq])
-    subproblem.addVariable([vpq[key] for key in vpq])
-    subproblem.addVariable(eps)
+    rowind = list(constraints2)  # Converti constraints2 in una lista di vincoli
+    rhs_values = []
 
-    # Objective function
-    obj = (xp.Sum(vpq[p, q]  for p in X for q in X if p < q) +
-           xp.Sum(wpq[p, q] for p in P for q in X))
-    subproblem.setObjective(obj, sense=xp.minimize)
-    constraints=[]
-    constraints1=[]
-    constraints2=[]
-    constraints3=[]
+    j = 0
+    for p in P:
+        for q in X:
+            # Verifica che j non superi la lunghezza di rowind
+            if j < len(rowind):
+                rhs_value = -Mp[p] * (1 - ypq_solution[p, q])
+                rhs_values.append(rhs_value)
+            j += 1
+
+    # Aggiorna solo i vincoli specifici
+    subproblem.chgrhs(rowind[:len(rhs_values)], rhs_values)
+    rowind2 = list(constraints3)  # Converti constraints2 in una lista di vincoli
+    rhs_values = []
+
     for p in X:
         for q in X:
             if p < q:
-                lhs = xp.Sum(
-                    (xp_var[q]['X' if k == 0 else 'Y'] - xp_var[p]['X' if k == 0 else 'Y']) ** 2 for k in range(d))
-                constraint=-lhs+ spq[p, q] ** 2>=0
-                subproblem.addConstraint(constraint)
-                constraints.append(constraint)
-    for p in P:
-        for q in X:
-            lhs2 = xp.Sum(
-                (xp_var[q]['X' if k == 0 else 'Y'] - coordinates_p[p]['X' if k == 0 else 'Y']) ** 2 for k in range(d))
-            constraint1=-lhs2+ tpq[p, q] ** 2>=0
-            subproblem.addConstraint(constraint1)
-            constraints1.append(constraint1)
-    for p in P:
-        for q in X:
-            constraint2= wpq[p,q]-tpq[p, q] >=-Mp[p] * (1 - ypq_solution[p, q])
-            subproblem.addConstraint(constraint2)
-            constraints2.append(constraint2)
-    for p in X:
-        for q in X:
-            if p < q:
-                constraint3= vpq[p,q]- spq[p, q] >= -M * (1 - zpq_solution[p, q])
-                subproblem.addConstraint(constraint3)
-                constraints3.append(constraint3)
-
+                rhs_value = -M * (1 - zpq_solution[p, q])
+                rhs_values.append(rhs_value)
+    # Aggiorna solo i vincoli specifici
+    subproblem.chgrhs(rowind2[:len(rhs_values)], rhs_values)
     subproblem.solve()
     UB = subproblem.getObjVal()
     print("UB", UB)
@@ -165,30 +214,23 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
         spq_solution = {key: subproblem.getSolution(spq[key]) for key in spq}
         wpq_solution = {key: subproblem.getSolution(wpq[key]) for key in wpq}
         vpq_solution = {key: subproblem.getSolution(wpq[key]) for key in vpq}
-
+        delta_solution={key: subproblem.getSolution(deltapq[key]) for key in deltapq}
+        gamma_solution = {key: subproblem.getSolution(gammapq[key]) for key in gammapq}
         print("Optimal solution found")
         print(tpq_solution)
         print(spq_solution)
+        print(delta_solution)
+        print(gamma_solution)
         print("xp:", xp_solution)
         multipliers = subproblem.getDual(constraints)
         multipliers1 = subproblem.getDual(constraints1)
         multipliers2 = subproblem.getDual(constraints2)
         multipliers3 = subproblem.getDual(constraints3)
+        multipliers4 = subproblem.getDual(constraints4)
+        multipliers5 = subproblem.getDual(constraints5)
 
-        for i in range(len(multipliers)):
-            if abs(multipliers[i]) < 10 ** -6:
-                multipliers[i] = 0
-        for i in range(len(multipliers1)):
-            if abs(multipliers1[i]) < 10 ** -6:
-                multipliers1[i] = 0
-        for i in range(len(multipliers2)):
-            if abs(multipliers2[i]) < 10 ** -6:
-                multipliers2[i] = 0
-        for i in range(len(multipliers3)):
-            if abs(multipliers3[i]) < 10 ** -6:
-                multipliers3[i] = 0
-        print(f" Multipliers: {multipliers}")
-        print(f" Multipliers1: {multipliers1}")
+        print(f" Multipliers: {multipliers4}")
+        print(f" Multipliers1: {multipliers5}")
         print(f" Multipliers2: {multipliers2}")
         print(f" Multipliers3: {multipliers3}")
         pairs = [(p, q) for p in P for q in X]  # Generiamo tutte le coppie (p, q)
@@ -196,11 +238,15 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
             p: sum(coordinates_p[p]['X' if k == 0 else 'Y'] ** 2 for k in range(d))
             for p in P
         }
-        valore=(10e-3)**2*sum(multipliers1[j]for j, (p, q) in enumerate((p, q) for p in P for q in X))+(10e-3)**2*multipliers[0]
+        valore=-(xp.Sum(multipliers4[j]*coordinates_p[p]['X'] for j, (p, q) in enumerate((p, q) for p in P for q in X)))-xp.Sum(multipliers5[j]*coordinates_p[p]['Y'] for j, (p, q) in enumerate((p, q) for p in P for q in X))
+        -xp.Sum(multipliers2[j] * (Mp[p] * (1 - ypq_solution[p, q]))
+                         for j, (p, q) in enumerate((p, q) for p in P for q in X))
+        - xp.Sum(multipliers3[j] * (M * (1 - zpq_solution[p, q]))
+                         for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
         print("valore")
         print(valore)
         optimality_cut = (
-                UB
+                -(xp.Sum(multipliers4[j]*coordinates_p[p]['X'] for j, (p, q) in enumerate((p, q) for p in P for q in X)))-xp.Sum(multipliers5[j]*coordinates_p[p]['Y'] for j, (p, q) in enumerate((p, q) for p in P for q in X))
                 - xp.Sum(multipliers2[j] * (Mp[p] * (1 - ypq[p, q]))
                          for j, (p, q) in enumerate((p, q) for p in P for q in X))
                 - xp.Sum(multipliers3[j] * (M * (1 - zpq[p, q]))
