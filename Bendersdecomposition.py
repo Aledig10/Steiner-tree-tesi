@@ -8,7 +8,7 @@ import time
 
 start_time = time.time()
 # Leggi i dati dal file CSV
-data = pd.read_csv('istanza5.csv', sep='\s+')
+data = pd.read_csv('istanza3.csv', sep='\s+')
 data = data.drop(data.columns[0], axis=1)
 data = data.reset_index()
 
@@ -46,8 +46,8 @@ for p in P:
 #Start defining the MASTER PROBLEM
 # Decision variable
 
-ypq = {(p, q): xp.var(vartype=xp.binary,name=f"y_{p}_{q}") for p in P for q in X}
-zpq = {(p, q): xp.var(vartype=xp.binary,name=f"z_{p}_{q}") for p in X for q in X if p<q }
+ypq = {(p, q): xp.var(vartype=xp.binary, ub=1, lb=0,name=f"y_{p}_{q}") for p in P for q in X}
+zpq = {(p, q): xp.var(vartype=xp.binary,ub=1,lb=0,name=f"z_{p}_{q}") for p in X for q in X if p<q }
 theta =  xp.var(vartype=xp.continuous,name="theta")
 
 
@@ -158,20 +158,24 @@ for p in X:
             constraint3 = vpq[p, q] - spq[p, q] >= 0
             subproblem.addConstraint(constraint3)
             constraints3.append(constraint3)
-max_iters = 10
+
+max_iters = 100000
 UB=100
 LB=0
 iteration = 0
 while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
     print(f"\nIterazione {iteration + 1}")
-    problem.write("Master1.lp")
+    problem.setControl("heurselect", 3)  # Usa euristiche aggressive
+    problem.setControl("heursearcheffort", 2)  # Medio sforzo nelle euristiche
+    problem.setControl("heursearchfreq", 1)  # Frequenza di utilizzo delle euristiche
+   # problem.addcbintsol(mipnode_callback)
     problem.solve()
     LB = problem.getObjVal()
     print("LB", LB)
     status = problem.getProbStatus()
     if status == xp.mip_optimal:
-        ypq_solution = {key: problem.getSolution(ypq[key]) for key in ypq}
-        zpq_solution = {key: problem.getSolution(zpq[key]) for key in zpq}
+        ypq_solution=problem.getSolution(ypq)
+        zpq_solution = problem.getSolution(zpq)
 
         print("Optimal solution found")
         print("ypq:", ypq_solution)
@@ -207,21 +211,15 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
     UB = subproblem.getObjVal()
     print("UB", UB)
     status = subproblem.getProbStatus()
-    print(subproblem.getProbStatusString())
     if status == xp.lp_optimal:
-        xp_solution = {key: subproblem.getSolution(xp_var[key]) for key in xp_var}
-        tpq_solution = {key: subproblem.getSolution(tpq[key]) for key in tpq}
-        spq_solution = {key: subproblem.getSolution(spq[key]) for key in spq}
-        wpq_solution = {key: subproblem.getSolution(wpq[key]) for key in wpq}
-        vpq_solution = {key: subproblem.getSolution(wpq[key]) for key in vpq}
-        delta_solution={key: subproblem.getSolution(deltapq[key]) for key in deltapq}
-        gamma_solution = {key: subproblem.getSolution(gammapq[key]) for key in gammapq}
+        xp_solution = subproblem.getSolution(xp_var)
+        tpq_solution = subproblem.getSolution(tpq)
+        spq_solution = subproblem.getSolution(spq)
+        wpq_solution = subproblem.getSolution(wpq)
+        vpq_solution = subproblem.getSolution(vpq)
+        delta_solution=subproblem.getSolution(deltapq)
+        gamma_solution = subproblem.getSolution(gammapq)
         print("Optimal solution found")
-        print(tpq_solution)
-        print(spq_solution)
-        print(delta_solution)
-        print(gamma_solution)
-        print("xp:", xp_solution)
         multipliers = subproblem.getDual(constraints)
         multipliers1 = subproblem.getDual(constraints1)
         multipliers2 = subproblem.getDual(constraints2)
@@ -229,22 +227,11 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
         multipliers4 = subproblem.getDual(constraints4)
         multipliers5 = subproblem.getDual(constraints5)
 
-        print(f" Multipliers: {multipliers4}")
-        print(f" Multipliers1: {multipliers5}")
-        print(f" Multipliers2: {multipliers2}")
-        print(f" Multipliers3: {multipliers3}")
-        pairs = [(p, q) for p in P for q in X]  # Generiamo tutte le coppie (p, q)
+        pairs = [(p, q) for p in P for q in X]
         coord_squares = {
             p: sum(coordinates_p[p]['X' if k == 0 else 'Y'] ** 2 for k in range(d))
             for p in P
         }
-        valore=-(xp.Sum(multipliers4[j]*coordinates_p[p]['X'] for j, (p, q) in enumerate((p, q) for p in P for q in X)))-xp.Sum(multipliers5[j]*coordinates_p[p]['Y'] for j, (p, q) in enumerate((p, q) for p in P for q in X))
-        -xp.Sum(multipliers2[j] * (Mp[p] * (1 - ypq_solution[p, q]))
-                         for j, (p, q) in enumerate((p, q) for p in P for q in X))
-        - xp.Sum(multipliers3[j] * (M * (1 - zpq_solution[p, q]))
-                         for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
-        print("valore")
-        print(valore)
         optimality_cut = (
                 -(xp.Sum(multipliers4[j]*coordinates_p[p]['X'] for j, (p, q) in enumerate((p, q) for p in P for q in X)))-xp.Sum(multipliers5[j]*coordinates_p[p]['Y'] for j, (p, q) in enumerate((p, q) for p in P for q in X))
                 - xp.Sum(multipliers2[j] * (Mp[p] * (1 - ypq[p, q]))
@@ -255,9 +242,6 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
         )
 
         problem.addConstraint(optimality_cut)
-
-        problem.write("modello.lp")
-        print(f"optimality cut: {optimality_cut}")
 
     if subproblem.getProbStatus() == xp.lp_infeas:
         print(subproblem.getProbStatus())
@@ -293,19 +277,8 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
         print(f"Aggiunto feasibility cut: {feasibility_cut}")
         """
     print(f"UB: {UB}, LB: {LB}, Difference: {np.abs(UB - LB) / UB}")
-    print(Mp)
-    print(tpq_solution)
-    print(spq_solution)
-    print(M)
-    print(ypq_solution)
-    print(wpq_solution)
     iteration=iteration+1
     print(iteration)
-for q in X:
-    grado_q = sum(ypq_solution[p, q] for p in P) + \
-              sum(zpq_solution[p, q] for p in X if p < q) + \
-              sum(zpq_solution[q, p] for p in X if p > q)
-    print(f"Nodo {q}, Grado: {grado_q}")
 end_time = time.time()
 execution_time = end_time - start_time
 print(f"Tempo di esecuzione: {execution_time:.6f} secondi")
