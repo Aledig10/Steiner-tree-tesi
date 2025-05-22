@@ -232,17 +232,42 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
             p: sum(coordinates_p[p]['X' if k == 0 else 'Y'] ** 2 for k in range(d))
             for p in P
         }
-        optimality_cut = (
-                -(xp.Sum(multipliers4[j]*coordinates_p[p]['X'] for j, (p, q) in enumerate((p, q) for p in P for q in X)))-xp.Sum(multipliers5[j]*coordinates_p[p]['Y'] for j, (p, q) in enumerate((p, q) for p in P for q in X))
-                - xp.Sum(multipliers2[j] * (Mp[p] * (1 - ypq[p, q]))
-                         for j, (p, q) in enumerate((p, q) for p in P for q in X))
-                - xp.Sum(multipliers3[j] * (M * (1 - zpq[p, q]))
-                         for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
-                <= theta
+        epsilon = 1e-8  # soglia
+
+        # Parte X dei tagli
+        part_x = -xp.Sum(
+            multipliers4[j] * coordinates_p[p]['X']
+            for j, (p, q) in enumerate((p, q) for p in P for q in X)
         )
 
-        problem.addConstraint(optimality_cut)
+        # Parte Y dei tagli
+        part_y = -xp.Sum(
+            multipliers5[j] * coordinates_p[p]['Y']
+            for j, (p, q) in enumerate((p, q) for p in P for q in X)
+        )
 
+        # Termini con ypq: se il moltiplicatore è troppo piccolo, uso il valore costante Mp[p]
+        part_ypq = -xp.Sum(
+            multipliers2[j] * (
+                Mp[p] * (1 - ypq[p, q]) if abs(multipliers2[j]) >= epsilon
+                else Mp[p] if multipliers2[j] <= 0
+                else 0
+            )
+            for j, (p, q) in enumerate((p, q) for p in P for q in X)
+        )
+        # Termini con zpq: se il moltiplicatore è troppo piccolo, uso il valore costante M
+        part_zpq = -xp.Sum(
+            multipliers3[j] * (
+                M* (1 - zpq[p, q]) if abs(multipliers3[j]) >= epsilon
+                else M if multipliers3[j] <= 0
+                else 0
+            )
+            for j, (p, q) in enumerate((p, q) for p in P for q in X if p<q)
+        )
+
+        # Vincolo finale
+        optimality_cut = (part_x + part_y + part_ypq + part_zpq <= theta)
+        problem.addConstraint(optimality_cut)
     if subproblem.getProbStatus() == xp.lp_infeas:
         print(subproblem.getProbStatus())
         print("Subproblem infeasible! Generation of a feasibility cut.")
