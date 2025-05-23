@@ -165,9 +165,9 @@ LB=0
 iteration = 0
 while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
     print(f"\nIterazione {iteration + 1}")
-    problem.setControl("heurselect", 3)  # Usa euristiche aggressive
-    problem.setControl("heursearcheffort", 2)  # Medio sforzo nelle euristiche
-    problem.setControl("heursearchfreq", 1)  # Frequenza di utilizzo delle euristiche
+    problem.setControl("heurselect", 3) 
+    problem.setControl("heursearcheffort", 2) 
+    problem.setControl("heursearchfreq", 1) 
    # problem.addcbintsol(mipnode_callback)
     problem.solve()
     LB = problem.getObjVal()
@@ -183,21 +183,21 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
     else:
         print(f"Error status: {status}")
     #There we pass to the subproblem
-    rowind = list(constraints2)  # Converti constraints2 in una lista di vincoli
+    rowind = list(constraints2)
     rhs_values = []
 
     j = 0
     for p in P:
         for q in X:
-            # Verifica che j non superi la lunghezza di rowind
+            #
             if j < len(rowind):
                 rhs_value = -Mp[p] * (1 - ypq_solution[p, q])
                 rhs_values.append(rhs_value)
             j += 1
 
-    # Aggiorna solo i vincoli specifici
+   
     subproblem.chgrhs(rowind[:len(rhs_values)], rhs_values)
-    rowind2 = list(constraints3)  # Converti constraints2 in una lista di vincoli
+    rowind2 = list(constraints3) 
     rhs_values = []
 
     for p in X:
@@ -205,7 +205,7 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
             if p < q:
                 rhs_value = -M * (1 - zpq_solution[p, q])
                 rhs_values.append(rhs_value)
-    # Aggiorna solo i vincoli specifici
+    
     subproblem.chgrhs(rowind2[:len(rhs_values)], rhs_values)
     subproblem.solve()
     UB = subproblem.getObjVal()
@@ -232,21 +232,21 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
             p: sum(coordinates_p[p]['X' if k == 0 else 'Y'] ** 2 for k in range(d))
             for p in P
         }
-        epsilon = 1e-8  # soglia
+        epsilon = 1e-8 
 
-        # Parte X dei tagli
+
         part_x = -xp.Sum(
             multipliers4[j] * coordinates_p[p]['X']
             for j, (p, q) in enumerate((p, q) for p in P for q in X)
         )
 
-        # Parte Y dei tagli
+    
         part_y = -xp.Sum(
             multipliers5[j] * coordinates_p[p]['Y']
             for j, (p, q) in enumerate((p, q) for p in P for q in X)
         )
 
-        # Termini con ypq: se il moltiplicatore è troppo piccolo, uso il valore costante Mp[p]
+    
         part_ypq = -xp.Sum(
             multipliers2[j] * (
                 Mp[p] * (1 - ypq[p, q]) if abs(multipliers2[j]) >= epsilon
@@ -255,7 +255,7 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
             )
             for j, (p, q) in enumerate((p, q) for p in P for q in X)
         )
-        # Termini con zpq: se il moltiplicatore è troppo piccolo, uso il valore costante M
+    
         part_zpq = -xp.Sum(
             multipliers3[j] * (
                 M* (1 - zpq[p, q]) if abs(multipliers3[j]) >= epsilon
@@ -265,7 +265,7 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
             for j, (p, q) in enumerate((p, q) for p in P for q in X if p<q)
         )
 
-        # Vincolo finale
+
         optimality_cut = (part_x + part_y + part_ypq + part_zpq <= theta)
         problem.addConstraint(optimality_cut)
     if subproblem.getProbStatus() == xp.lp_infeas:
