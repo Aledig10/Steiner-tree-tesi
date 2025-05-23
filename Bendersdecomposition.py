@@ -232,7 +232,7 @@ while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
             p: sum(coordinates_p[p]['X' if k == 0 else 'Y'] ** 2 for k in range(d))
             for p in P
         }
-        epsilon = 1e-8 
+        epsilon = 1e-7
 
 
         part_x = -xp.Sum(
