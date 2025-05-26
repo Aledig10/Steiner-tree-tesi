@@ -6,6 +6,116 @@ import matplotlib.pyplot as plt
 import time
 
 
+def cb_preintsol(subproblem,P,X, constraints2, constraints3):
+    rowind = list(constraints2)
+    rhs_values = []
+
+    ypq_solution = problem.getCallbackSolution(ypq)
+    zpq_solution = problem.getCallbackSolution(zpq)
+    for p in P:
+        for q in X:
+            rhs_value = -Mp[p] * (1 - ypq_solution[p, q])
+            rhs_values.append(rhs_value)
+
+    # Aggiorna solo i vincoli specifici
+    subproblem.chgrhs(rowind[:len(rhs_values)], rhs_values)
+    rowind2 = list(constraints3)
+    rhs_values = []
+
+    for p in X:
+        for q in X:
+            if p < q:
+                rhs_value = -M * (1 - zpq_solution[p, q])
+                rhs_values.append(rhs_value)
+    subproblem.chgrhs(rowind2[:len(rhs_values)], rhs_values)
+    subproblem.solve()
+    UB = subproblem.getObjVal()
+    print("UB", UB)
+    status = subproblem.getProbStatus()
+    if status == xp.lp_optimal:
+        xp_solution = subproblem.getSolution(xp_var)
+        wpq_solution = subproblem.getSolution(wpq)
+        vpq_solution = subproblem.getSolution(vpq)
+        value= sum(wpq_solution[p,q] for p in P for q in X)+ sum(vpq_solution[p,q] for p in X for q in X if p<q)
+    return value
+
+def cb_optnode():
+    rowind = list(constraints2)
+    rhs_values = []
+    ypq_solution = problem.getCallbackSolution(ypq)
+    zpq_solution = problem.getCallbackSolution(zpq)
+    for p in P:
+        for q in X:
+            rhs_value = -Mp[p] * (1 - ypq_solution[p, q])
+            rhs_values.append(rhs_value)
+
+    subproblem.chgrhs(rowind[:len(rhs_values)], rhs_values)
+    rowind2 = list(constraints3)
+    rhs_values = []
+
+    for p in X:
+        for q in X:
+            if p < q:
+                rhs_value = -M * (1 - zpq_solution[p, q])
+                rhs_values.append(rhs_value)
+
+    subproblem.chgrhs(rowind2[:len(rhs_values)], rhs_values)
+    subproblem.solve()
+    UB = subproblem.getObjVal()
+    print("UB", UB)
+    status = subproblem.getProbStatus()
+    if status == xp.lp_optimal:
+        xp_solution = subproblem.getSolution(xp_var)
+        tpq_solution = subproblem.getSolution(tpq)
+        spq_solution = subproblem.getSolution(spq)
+        wpq_solution = subproblem.getSolution(wpq)
+        vpq_solution = subproblem.getSolution(vpq)
+        delta_solution = subproblem.getSolution(deltapq)
+        gamma_solution = subproblem.getSolution(gammapq)
+        multipliers = subproblem.getDual(constraints)
+        multipliers1 = subproblem.getDual(constraints1)
+        multipliers2 = subproblem.getDual(constraints2)
+        multipliers3 = subproblem.getDual(constraints3)
+        multipliers4 = subproblem.getDual(constraints4)
+        multipliers5 = subproblem.getDual(constraints5)
+        colind = []
+        cutcoef = []
+        rhs_val = 0.0
+
+        epsilon = 1e-7
+
+        for j, (p, q) in enumerate((p, q) for p in P for q in X):
+            rhs_val += -multipliers4[j] * coordinates_p[p]['X']
+            rhs_val += -multipliers5[j] * coordinates_p[p]['Y']
+
+
+        for j, (p, q) in enumerate((p, q) for p in P for q in X):
+            if abs(multipliers2[j]) >= epsilon:
+                coef = multipliers2[j] * Mp[p]
+                colind.append(ypq[p, q])
+                cutcoef.append(-coef)
+                rhs_val += coef
+            elif multipliers2[j] <= 0:
+                rhs_val += multipliers2[j] * Mp[p]
+
+        for j, (p, q) in enumerate((p, q) for p in P for q in X if p < q):
+            if abs(multipliers3[j]) >= epsilon:
+                coef = multipliers3[j] * M
+                colind.append(zpq[p, q])
+                cutcoef.append(-coef)
+                rhs_val += coef
+            elif multipliers3[j] <= 0:
+                rhs_val += multipliers3[j] * M
+
+        colind.append(theta)
+        cutcoef.append(-1.0)
+        cuttype = [1]
+        rowtype = ['L']
+        rhs = [rhs_val]
+        start = [0, len(colind)]
+        problem.addcuts(cuttype, rowtype, rhs, start, colind, cutcoef)
+
+    return 0
 start_time = time.time()
 # Leggi i dati dal file CSV
 data = pd.read_csv('istanza3.csv', sep='\s+')
@@ -77,7 +187,6 @@ for q in X:
 for q in X:
     problem.addConstraint(xp.Sum(ypq[p, q] for p in P) <= 2)
 
-problem.write("Master2.lp")
 xp_var = {
     k: {
         'X': xp.var(vartype=xp.continuous, name=f"xp_{k}"),
@@ -158,152 +267,23 @@ for p in X:
             constraint3 = vpq[p, q] - spq[p, q] >= 0
             subproblem.addConstraint(constraint3)
             constraints3.append(constraint3)
+cb_instance = cb_preintsol(subproblem, P,X, constraints2, constraints3)
+problem.addcbpreintsol(cb_instance)
+problem.addcboptnode(cb_preintsol, None, 0)
+problem.solve()
+LB = problem.getObjVal()
+print("LB", LB)
+status = problem.getProbStatus()
+if status == xp.mip_optimal:
+    ypq_solution=problem.getSolution(ypq)
+    zpq_solution = problem.getSolution(zpq)
 
-max_iters = 100000
-UB=100
-LB=0
-iteration = 0
-while iteration <= max_iters and np.abs(UB-LB)/abs(UB)>=0.01:
-    print(f"\nIterazione {iteration + 1}")
-    problem.setControl("heurselect", 3) 
-    problem.setControl("heursearcheffort", 2) 
-    problem.setControl("heursearchfreq", 1) 
-   # problem.addcbintsol(mipnode_callback)
-    problem.solve()
-    LB = problem.getObjVal()
-    print("LB", LB)
-    status = problem.getProbStatus()
-    if status == xp.mip_optimal:
-        ypq_solution=problem.getSolution(ypq)
-        zpq_solution = problem.getSolution(zpq)
+    print("Optimal solution found")
+    print("ypq:", ypq_solution)
+    print("zpq:", zpq_solution)
+else:
+    print(f"Error status: {status}")
 
-        print("Optimal solution found")
-        print("ypq:", ypq_solution)
-        print("zpq:", zpq_solution)
-    else:
-        print(f"Error status: {status}")
-    #There we pass to the subproblem
-    rowind = list(constraints2)
-    rhs_values = []
-
-    j = 0
-    for p in P:
-        for q in X:
-            #
-            if j < len(rowind):
-                rhs_value = -Mp[p] * (1 - ypq_solution[p, q])
-                rhs_values.append(rhs_value)
-            j += 1
-
-   
-    subproblem.chgrhs(rowind[:len(rhs_values)], rhs_values)
-    rowind2 = list(constraints3) 
-    rhs_values = []
-
-    for p in X:
-        for q in X:
-            if p < q:
-                rhs_value = -M * (1 - zpq_solution[p, q])
-                rhs_values.append(rhs_value)
-    
-    subproblem.chgrhs(rowind2[:len(rhs_values)], rhs_values)
-    subproblem.solve()
-    UB = subproblem.getObjVal()
-    print("UB", UB)
-    status = subproblem.getProbStatus()
-    if status == xp.lp_optimal:
-        xp_solution = subproblem.getSolution(xp_var)
-        tpq_solution = subproblem.getSolution(tpq)
-        spq_solution = subproblem.getSolution(spq)
-        wpq_solution = subproblem.getSolution(wpq)
-        vpq_solution = subproblem.getSolution(vpq)
-        delta_solution=subproblem.getSolution(deltapq)
-        gamma_solution = subproblem.getSolution(gammapq)
-        print("Optimal solution found")
-        multipliers = subproblem.getDual(constraints)
-        multipliers1 = subproblem.getDual(constraints1)
-        multipliers2 = subproblem.getDual(constraints2)
-        multipliers3 = subproblem.getDual(constraints3)
-        multipliers4 = subproblem.getDual(constraints4)
-        multipliers5 = subproblem.getDual(constraints5)
-
-        pairs = [(p, q) for p in P for q in X]
-        coord_squares = {
-            p: sum(coordinates_p[p]['X' if k == 0 else 'Y'] ** 2 for k in range(d))
-            for p in P
-        }
-        epsilon = 1e-7
-
-
-        part_x = -xp.Sum(
-            multipliers4[j] * coordinates_p[p]['X']
-            for j, (p, q) in enumerate((p, q) for p in P for q in X)
-        )
-
-    
-        part_y = -xp.Sum(
-            multipliers5[j] * coordinates_p[p]['Y']
-            for j, (p, q) in enumerate((p, q) for p in P for q in X)
-        )
-
-    
-        part_ypq = -xp.Sum(
-            multipliers2[j] * (
-                Mp[p] * (1 - ypq[p, q]) if abs(multipliers2[j]) >= epsilon
-                else Mp[p] if multipliers2[j] <= 0
-                else 0
-            )
-            for j, (p, q) in enumerate((p, q) for p in P for q in X)
-        )
-    
-        part_zpq = -xp.Sum(
-            multipliers3[j] * (
-                M* (1 - zpq[p, q]) if abs(multipliers3[j]) >= epsilon
-                else M if multipliers3[j] <= 0
-                else 0
-            )
-            for j, (p, q) in enumerate((p, q) for p in P for q in X if p<q)
-        )
-
-
-        optimality_cut = (part_x + part_y + part_ypq + part_zpq <= theta)
-        problem.addConstraint(optimality_cut)
-    if subproblem.getProbStatus() == xp.lp_infeas:
-        print(subproblem.getProbStatus())
-        print("Subproblem infeasible! Generation of a feasibility cut.")
-        farkas_multipliers = []
-        v = subproblem.hasdualray()
-        print(v)
-        subproblem.getdualray(farkas_multipliers)
-        #Non può accadere che sia unfeasible
-        """
-        print(f"Farkas Multipliers: {farkas_multipliers} ")
-        k = sum(1 for _ in P for _ in X)
-        u = sum(1 for p in X for q in X if p < q)
-        pairs = [(p, q) for p in P for q in X]  # Generiamo tutte le coppie (p, q)
-        coord_squares = {
-            p: sum(coordinates_p[p]['X' if k == 0 else 'Y'] ** 2 for k in range(d))
-            for p in P
-        }
-
-        feasibility_cut = (
-                sum(farkas_multipliers[j+u] * (coord_squares[p] + (1e-3) ** 2)
-                    for j, (p, q) in enumerate((p, q) for p in P for q in X))
-                + xp.Sum(farkas_multipliers[j] * (1e-3) ** 2
-                         for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
-                - xp.Sum(farkas_multipliers[j+k+u] * (Mp[p] * (1 - ypq[p, q]))
-                         for j, (p, q) in enumerate((p, q) for p in P for q in X))
-                - xp.Sum(farkas_multipliers[j+2*k+u] * (M * (1 - zpq[p, q]))
-                         for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q))
-                <= 0
-        )
-
-        problem.addConstraint(feasibility_cut)
-        print(f"Aggiunto feasibility cut: {feasibility_cut}")
-        """
-    print(f"UB: {UB}, LB: {LB}, Difference: {np.abs(UB - LB) / UB}")
-    iteration=iteration+1
-    print(iteration)
 end_time = time.time()
 execution_time = end_time - start_time
 print(f"Tempo di esecuzione: {execution_time:.6f} secondi")
