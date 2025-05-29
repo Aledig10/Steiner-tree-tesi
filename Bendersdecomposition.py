@@ -6,12 +6,13 @@ import matplotlib.pyplot as plt
 import time
 
 
-def cb_preintsol(subproblem,P,X, constraints2, constraints3):
+def cb_preintsol(problem,subproblem,soltype,cutoff):
     rowind = list(constraints2)
     rhs_values = []
-
-    ypq_solution = problem.getCallbackSolution(ypq)
-    zpq_solution = problem.getCallbackSolution(zpq)
+    ypq_vals = problem.getCallbackSolution(list(ypq.values()))
+    ypq_solution = dict(zip(ypq.keys(), ypq_vals))
+    zpq_vals = problem.getCallbackSolution(list(zpq.values()))
+    zpq_solution = dict(zip(zpq.keys(), zpq_vals))
     for p in P:
         for q in X:
             rhs_value = -Mp[p] * (1 - ypq_solution[p, q])
@@ -37,13 +38,15 @@ def cb_preintsol(subproblem,P,X, constraints2, constraints3):
         wpq_solution = subproblem.getSolution(wpq)
         vpq_solution = subproblem.getSolution(vpq)
         value= sum(wpq_solution[p,q] for p in P for q in X)+ sum(vpq_solution[p,q] for p in X for q in X if p<q)
-    return value
+    return (True,value)
 
-def cb_optnode():
+def cb_optnode(problem,subproblem):
     rowind = list(constraints2)
     rhs_values = []
-    ypq_solution = problem.getCallbackSolution(ypq)
-    zpq_solution = problem.getCallbackSolution(zpq)
+    ypq_vals = problem.getCallbackSolution(list(ypq.values()))
+    ypq_solution = dict(zip(ypq.keys(), ypq_vals))
+    zpq_vals = problem.getCallbackSolution(list(zpq.values()))
+    zpq_solution = dict(zip(zpq.keys(), zpq_vals))
     for p in P:
         for q in X:
             rhs_value = -Mp[p] * (1 - ypq_solution[p, q])
@@ -72,17 +75,21 @@ def cb_optnode():
         vpq_solution = subproblem.getSolution(vpq)
         delta_solution = subproblem.getSolution(deltapq)
         gamma_solution = subproblem.getSolution(gammapq)
-        multipliers = subproblem.getDual(constraints)
-        multipliers1 = subproblem.getDual(constraints1)
-        multipliers2 = subproblem.getDual(constraints2)
-        multipliers3 = subproblem.getDual(constraints3)
-        multipliers4 = subproblem.getDual(constraints4)
-        multipliers5 = subproblem.getDual(constraints5)
+        multipliers = subproblem.getDuals(constraints)
+        multipliers1 = subproblem.getDuals(constraints1)
+        multipliers2 = subproblem.getDuals(constraints2)
+        multipliers3 = subproblem.getDuals(constraints3)
+        multipliers4 = subproblem.getDuals(constraints4)
+        multipliers5 = subproblem.getDuals(constraints5)
         colind = []
         cutcoef = []
         rhs_val = 0.0
 
         epsilon = 1e-7
+        print(multipliers4)
+        print(multipliers5)
+        print(multipliers3)
+        print(multipliers2)
 
         for j, (p, q) in enumerate((p, q) for p in P for q in X):
             rhs_val += -multipliers4[j] * coordinates_p[p]['X']
@@ -92,33 +99,36 @@ def cb_optnode():
         for j, (p, q) in enumerate((p, q) for p in P for q in X):
             if abs(multipliers2[j]) >= epsilon:
                 coef = multipliers2[j] * Mp[p]
-                colind.append(ypq[p, q])
-                cutcoef.append(-coef)
+                colind.append(problem.getIndex(ypq[p, q]))
+                cutcoef.append(coef)
                 rhs_val += coef
             elif multipliers2[j] <= 0:
-                rhs_val += multipliers2[j] * Mp[p]
+                rhs_val += -multipliers2[j] * Mp[p]
 
         for j, (p, q) in enumerate((p, q) for p in P for q in X if p < q):
             if abs(multipliers3[j]) >= epsilon:
                 coef = multipliers3[j] * M
-                colind.append(zpq[p, q])
-                cutcoef.append(-coef)
-                rhs_val += coef
+                colind.append(problem.getIndex(zpq[p, q]))
+                cutcoef.append(coef)
+                rhs_val += -coef
             elif multipliers3[j] <= 0:
                 rhs_val += multipliers3[j] * M
 
-        colind.append(theta)
+        colind.append((problem.getIndex(theta)))
         cutcoef.append(-1.0)
         cuttype = [1]
         rowtype = ['L']
         rhs = [rhs_val]
-        start = [0, len(colind)]
+        start = [0,len(colind)]
+        thetasol=problem.getCallbackSolution(theta)
+        print("thetasol", thetasol)
+        problem.write('problema.lp')
         problem.addcuts(cuttype, rowtype, rhs, start, colind, cutcoef)
 
     return 0
 start_time = time.time()
 # Leggi i dati dal file CSV
-data = pd.read_csv('istanza3.csv', sep='\s+')
+data = pd.read_csv('istanza5.csv', sep='\s+')
 data = data.drop(data.columns[0], axis=1)
 data = data.reset_index()
 
@@ -155,20 +165,16 @@ for p in P:
                     M= distanza1
 #Start defining the MASTER PROBLEM
 # Decision variable
-
-ypq = {(p, q): xp.var(vartype=xp.binary, ub=1, lb=0,name=f"y_{p}_{q}") for p in P for q in X}
-zpq = {(p, q): xp.var(vartype=xp.binary,ub=1,lb=0,name=f"z_{p}_{q}") for p in X for q in X if p<q }
-theta =  xp.var(vartype=xp.continuous,name="theta")
-
-
 problem = xp.problem(name="Master problem")
-problem.addVariable([ypq[key] for key in ypq])
-problem.addVariable([zpq[key] for key in zpq])
-problem.addVariable(theta)
+ypq= {(p, q): problem.addVariable(name=f"y_{p}_{q}",
+                           vartype=xp.binary) for p in P for q in X}
+zpq= {(p, q): problem.addVariable(name=f"z_{p}_{q}",
+                           vartype=xp.binary) for p in X for q in X if p<q}
+
+theta =  problem.addVariable(vartype=xp.continuous,name="theta")
 
 # Objective function
-obj = (theta)
-problem.setObjective(obj, sense=xp.minimize)
+problem.setObjective(theta, sense=xp.minimize)
 #constraints
 for p in P:
     problem.addConstraint(xp.Sum(ypq[p, q] for q in X) == 1)
@@ -267,9 +273,9 @@ for p in X:
             constraint3 = vpq[p, q] - spq[p, q] >= 0
             subproblem.addConstraint(constraint3)
             constraints3.append(constraint3)
-cb_instance = cb_preintsol(subproblem, P,X, constraints2, constraints3)
-problem.addcbpreintsol(cb_instance)
-problem.addcboptnode(cb_preintsol, None, 0)
+problem.setControl("presolve", 0)  # Disattiva completamente il presolve
+problem.addcbpreintsol(cb_preintsol,subproblem,1)
+problem.addcboptnode(cb_optnode, subproblem, 0)
 problem.solve()
 LB = problem.getObjVal()
 print("LB", LB)
@@ -283,7 +289,30 @@ if status == xp.mip_optimal:
     print("zpq:", zpq_solution)
 else:
     print(f"Error status: {status}")
+#Now we need to extract the values of the subproblem
+rowind = list(constraints2)
+rhs_values = []
 
+for p in P:
+      for q in X:
+          rhs_value = -Mp[p] * (1 - ypq_solution[p, q])
+          rhs_values.append(rhs_value)
+
+subproblem.chgrhs(rowind[:len(rhs_values)], rhs_values)
+rowind2 = list(constraints3)
+rhs_values = []
+
+for p in X:
+    for q in X:
+        if p < q:
+            rhs_value = -M * (1 - zpq_solution[p, q])
+            rhs_values.append(rhs_value)
+
+subproblem.chgrhs(rowind2[:len(rhs_values)], rhs_values)
+subproblem.solve()
+status = subproblem.getProbStatus()
+if status == xp.lp_optimal:
+    xp_solution = subproblem.getSolution(xp_var)
 end_time = time.time()
 execution_time = end_time - start_time
 print(f"Tempo di esecuzione: {execution_time:.6f} secondi")
