@@ -13,6 +13,8 @@ def cb_preintsol(problem,subproblem,soltype,cutoff):
     ypq_solution = dict(zip(ypq.keys(), ypq_vals))
     zpq_vals = problem.getCallbackSolution(list(zpq.values()))
     zpq_solution = dict(zip(zpq.keys(), zpq_vals))
+    print(ypq_solution)
+    print(zpq_solution)
     for p in P:
         for q in X:
             rhs_value = -Mp[p] * (1 - ypq_solution[p, q])
@@ -47,6 +49,8 @@ def cb_optnode(problem,subproblem):
     ypq_solution = dict(zip(ypq.keys(), ypq_vals))
     zpq_vals = problem.getCallbackSolution(list(zpq.values()))
     zpq_solution = dict(zip(zpq.keys(), zpq_vals))
+    print(ypq_solution)
+    print(zpq_solution)
     for p in P:
         for q in X:
             rhs_value = -Mp[p] * (1 - ypq_solution[p, q])
@@ -92,8 +96,8 @@ def cb_optnode(problem,subproblem):
         print(multipliers2)
 
         for j, (p, q) in enumerate((p, q) for p in P for q in X):
-            rhs_val += -multipliers4[j] * coordinates_p[p]['X']
-            rhs_val += -multipliers5[j] * coordinates_p[p]['Y']
+            rhs_val += multipliers4[j] * coordinates_p[p]['X']
+            rhs_val += multipliers5[j] * coordinates_p[p]['Y']
 
 
         for j, (p, q) in enumerate((p, q) for p in P for q in X):
@@ -103,14 +107,14 @@ def cb_optnode(problem,subproblem):
                 cutcoef.append(coef)
                 rhs_val += coef
             elif multipliers2[j] <= 0:
-                rhs_val += -multipliers2[j] * Mp[p]
+                rhs_val += multipliers2[j] * Mp[p]
 
         for j, (p, q) in enumerate((p, q) for p in P for q in X if p < q):
             if abs(multipliers3[j]) >= epsilon:
                 coef = multipliers3[j] * M
                 colind.append(problem.getIndex(zpq[p, q]))
                 cutcoef.append(coef)
-                rhs_val += -coef
+                rhs_val += coef
             elif multipliers3[j] <= 0:
                 rhs_val += multipliers3[j] * M
 
@@ -120,9 +124,6 @@ def cb_optnode(problem,subproblem):
         rowtype = ['L']
         rhs = [rhs_val]
         start = [0,len(colind)]
-        thetasol=problem.getCallbackSolution(theta)
-        print("thetasol", thetasol)
-        problem.write('problema.lp')
         problem.addcuts(cuttype, rowtype, rhs, start, colind, cutcoef)
 
     return 0
@@ -192,31 +193,29 @@ for q in X:
 
 for q in X:
     problem.addConstraint(xp.Sum(ypq[p, q] for p in P) <= 2)
-
+subproblem = xp.problem(name="Subproblem")
 xp_var = {
     k: {
-        'X': xp.var(vartype=xp.continuous, name=f"xp_{k}"),
-        'Y': xp.var(vartype=xp.continuous, name=f"yp_{k}")
+        'X': subproblem.addVariable(vartype=xp.continuous, name=f"xp_{k}"),
+        'Y': subproblem.addVariable(vartype=xp.continuous, name=f"yp_{k}")
     }
     for k in X
 }  # x^p in R^d
-spq = {(p, q): xp.var(vartype=xp.continuous, name=f"s_{p}_{q}") for p in X for q in X if p < q}
-tpq = {(p, q): xp.var(vartype=xp.continuous, name=f"t_{p}_{q}") for p in P for q in X}
-wpq = {(p, q): xp.var(vartype=xp.continuous, name=f"w_{p}_{q}") for p in P for q in X}
-vpq = {(p, q): xp.var(vartype=xp.continuous, name=f"v_{p}_{q}") for p in X for q in X if p < q}
-deltapq = {(p, q, coord): xp.var(vartype=xp.continuous, lb=-1e4, name=f"delta_{p}_{q}_{coord}")
+spq = {(p, q): subproblem.addVariable(name=f"s_{p}_{q}",
+                           vartype=xp.continuous) for p in X for q in X if p<q}
+tpq = {(p, q): subproblem.addVariable(name=f"t_{p}_{q}",
+                           vartype=xp.continuous) for p in P for q in X}
+wpq = {(p, q): subproblem.addVariable(name=f"w_{p}_{q}",
+                           vartype=xp.continuous) for p in P for q in X}
+vpq = {(p, q): subproblem.addVariable(name=f"v_{p}_{q}",
+                           vartype=xp.continuous) for p in X for q in X if p<q}
+deltapq = {(p, q, coord): subproblem.addVariable(vartype=xp.continuous, lb=-1e4, name=f"delta_{p}_{q}_{coord}")
            for p in P for q in X for coord in ['X', 'Y']}
 
-gammapq = {(p, q, coord): xp.var(vartype=xp.continuous, lb=-1e4, name=f"gamma_{p}_{q}_{coord}")
+gammapq = {(p, q, coord): subproblem.addVariable(vartype=xp.continuous, lb=-1e4, name=f"gamma_{p}_{q}_{coord}")
            for p in X for q in X if p < q for coord in ['X', 'Y']}
-subproblem = xp.problem(name="Subproblem")
-subproblem.addVariable([xp_var[key] for key in xp_var])
-subproblem.addVariable([spq[key] for key in spq])
-subproblem.addVariable([tpq[key] for key in tpq])
-subproblem.addVariable([wpq[key] for key in wpq])
-subproblem.addVariable([vpq[key] for key in vpq])
-subproblem.addVariable([deltapq[key] for key in deltapq])
-subproblem.addVariable([gammapq[key] for key in gammapq])
+
+
 # Objective function
 obj = (xp.Sum(vpq[p, q] for p in X for q in X if p < q) +
        xp.Sum(wpq[p, q] for p in P for q in X))
@@ -273,6 +272,7 @@ for p in X:
             constraint3 = vpq[p, q] - spq[p, q] >= 0
             subproblem.addConstraint(constraint3)
             constraints3.append(constraint3)
+
 problem.setControl("presolve", 0)  # Disattiva completamente il presolve
 problem.addcbpreintsol(cb_preintsol,subproblem,1)
 problem.addcboptnode(cb_optnode, subproblem, 0)
