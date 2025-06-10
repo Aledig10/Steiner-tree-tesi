@@ -1,19 +1,18 @@
 import xpress as xp
 import pandas as pd
 import numpy as np
-import matplotlib
 import matplotlib.pyplot as plt
 import time
 
 
 def cb_preintsol(problem,mindex,soltype,cutoff):
-    print(mindex)
     rowind = list(constraints2)
     rhs_values = []
     ypq_vals = problem.getCallbackSolution(list(ypq.values()))
     ypq_solution = dict(zip(ypq.keys(), ypq_vals))
     zpq_vals = problem.getCallbackSolution(list(zpq.values()))
     zpq_solution = dict(zip(zpq.keys(), zpq_vals))
+    theta_val=problem.getCallbackSolution(theta)
     print(ypq_solution)
     print(zpq_solution)
     for p in P:
@@ -36,8 +35,6 @@ def cb_preintsol(problem,mindex,soltype,cutoff):
     UB = subproblem.getObjVal()
     print("UB", UB)
     status = subproblem.getProbStatus()
-    theta_val = problem.getCallbackSolution(theta)
-    print("AIUTO")
     print("theta_val", theta_val)
     if status == xp.lp_optimal:
         xp_solution = subproblem.getSolution(xp_var)
@@ -54,6 +51,10 @@ def cb_preintsol(problem,mindex,soltype,cutoff):
         multipliers3 = subproblem.getDuals(constraints3)
         multipliers4 = subproblem.getDuals(constraints4)
         multipliers5 = subproblem.getDuals(constraints5)
+        print(multipliers4)
+        print(multipliers5)
+        print(multipliers2)
+        print(multipliers3)
         colind = []
         cutcoef = []
         rhs_val = 0.0
@@ -67,56 +68,35 @@ def cb_preintsol(problem,mindex,soltype,cutoff):
         for j, (p, q) in enumerate((p, q) for p in P for q in X):
             if abs(multipliers2[j]) >= epsilon:
                 coef = multipliers2[j] * Mp[p]
-                colind.append(problem.getIndex(ypq[p, q]))
+                colind.append(ypq[p, q])
                 cutcoef.append(coef)
                 rhs_val += coef
             elif multipliers2[j] <= 0:
-                rhs_val += -multipliers2[j] * Mp[p]
+                rhs_val += multipliers2[j] * Mp[p]
 
-        for j, (p, q) in enumerate((p, q) for p in P for q in X if p < q):
+        for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q):
             if abs(multipliers3[j]) >= epsilon:
                 coef = multipliers3[j] * M
-                colind.append(problem.getIndex(zpq[p, q]))
+                colind.append(zpq[p, q])
                 cutcoef.append(coef)
                 rhs_val += coef
             elif multipliers3[j] <= 0:
-                rhs_val += -multipliers3[j] * M
+                rhs_val += multipliers3[j] * M
 
-        colind.append((problem.getIndex(theta)))
+        colind.append(theta)
         cutcoef.append(-1.0)
         cuttype = [1]
         rowtype = ['L']
         rhs = [rhs_val]
         start = [0, len(colind)]
-        thetasol = problem.getCallbackSolution(theta)
-        print("thetasol", thetasol)
+        print(f"Check cut condition: theta = {thetasol}, UB = {UB}, ObjAbsAccuracy = {ObjAbsAccuracy}")
     if thetasol>=UB-ObjAbsAccuracy:
         return (False, None)
     else:
-        # In this case the solution (xhat,thetahat) is infeasible so
-        # reject it and store an optimality cut
-
         helplist = []
-        problem.storecuts(0,cuttype, rowtype, rhs, start, helplist,colind, cutcoef)
+        problem.storecuts(2,cuttype, rowtype, rhs, start, helplist,colind, cutcoef)
         mindex.append(helplist[0])
-        problem.write('probllema.lp')
-        print("ciao2")
-        return (True, UB)
-def cb_intsol(problem,objective):
-    print(objective)
-    theta_val = problem.getCallbackSolution(theta)
-    print("sono nell'intsol")
-def mipLog(problem, object):
-
-    nodedepth = problem.attributes.nodedepth
-    node      = problem.attributes.currentnode
-    print("sononel miplog")
-    print('Node {0} with depth {1} has been processed'.format
-          (node, nodedepth))
-
-    return 0
-def cb_nodecutoff(problem,object,node):
-    print("sono nel nodecutoff")
+        return (True, None)
 
 
 def cb_optnode(problem,mindex):
@@ -129,11 +109,11 @@ def cb_optnode(problem,mindex):
     thetasol = problem.getCallbackSolution(theta)
     print(ypq_solution)
     print(zpq_solution)
+    print(thetasol)
     if len(mindex) > 0:
         problem.loadcuts(1, -1, mindex)
         print(len(mindex), " cuts added")
         del mindex[:]
-    problem.write('probllema.lp')
     for p in P:
         for q in X:
             rhs_value = -Mp[p] * (1 - ypq_solution[p, q])
@@ -153,7 +133,6 @@ def cb_optnode(problem,mindex):
     subproblem.solve()
     UB = subproblem.getObjVal()
     print("UB", UB)
-    print("ciao")
     status = subproblem.getProbStatus()
     if status == xp.lp_optimal:
         xp_solution = subproblem.getSolution(xp_var)
@@ -172,11 +151,10 @@ def cb_optnode(problem,mindex):
         colind = []
         cutcoef = []
         rhs_val = 0.0
-        print(UB)
+        print(f"Check cut condition: theta = {thetasol}, UB = {UB}, ObjAbsAccuracy = {ObjAbsAccuracy}")
         if thetasol>=UB-ObjAbsAccuracy:
             return 0
         else:
-
             epsilon = 1e-7
             for j, (p, q) in enumerate((p, q) for p in P for q in X):
                 rhs_val += multipliers4[j] * coordinates_p[p]['X']
@@ -186,20 +164,20 @@ def cb_optnode(problem,mindex):
             for j, (p, q) in enumerate((p, q) for p in P for q in X):
                 if abs(multipliers2[j]) >= epsilon:
                     coef = multipliers2[j] * Mp[p]
-                    colind.append(problem.getIndex(ypq[p, q]))
+                    colind.append(ypq[p, q])
                     cutcoef.append(coef)
                     rhs_val += coef
                 elif multipliers2[j] <= 0:
-                    rhs_val += -multipliers2[j] * Mp[p]
+                    rhs_val += multipliers2[j] * Mp[p]
 
-            for j, (p, q) in enumerate((p, q) for p in P for q in X if p < q):
+            for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q):
                 if abs(multipliers3[j]) >= epsilon:
                     coef = multipliers3[j] * M
-                    colind.append(problem.getIndex(zpq[p, q]))
+                    colind.append(zpq[p, q])
                     cutcoef.append(coef)
                     rhs_val += coef
                 elif multipliers3[j] <= 0:
-                    rhs_val += -multipliers3[j] * M
+                   rhs_val += multipliers3[j] * M
 
             colind.append((problem.getIndex(theta)))
             cutcoef.append(-1.0)
@@ -207,16 +185,12 @@ def cb_optnode(problem,mindex):
             rowtype = ['L']
             rhs = [rhs_val]
             start = [0,len(colind)]
-            thetasol=problem.getCallbackSolution(theta)
-            print("thetasol", thetasol)
             problem.addcuts(cuttype, rowtype, rhs, start, colind, cutcoef)
-            print("ciao")
-            problem.write('probllema.lp')
             return 0
 
 start_time = time.time()
 # Leggi i dati dal file CSV
-data = pd.read_csv('istanza5.csv', sep='\s+')
+data = pd.read_csv('istanza3.csv', sep='\s+')
 data = data.drop(data.columns[0], axis=1)
 data = data.reset_index()
 
@@ -254,17 +228,19 @@ for p in P:
                     M= distanza1
 #Start defining the MASTER PROBLEM
 # Decision variable
-problem = xp.problem(name="Master problem")
-ypq= {(p, q): problem.addVariable(name=f"y_{p}_{q}",
-                           vartype=xp.binary) for p in P for q in X}
-zpq= {(p, q): problem.addVariable(name=f"z_{p}_{q}",
-                           vartype=xp.binary) for p in X for q in X if p<q}
+ypq = {(p, q): xp.var(vartype=xp.binary, ub=1, lb=0, name=f"y_{p}_{q}") for p in P for q in X}
+zpq = {(p, q): xp.var(vartype=xp.binary, ub=1, lb=0, name=f"z_{p}_{q}") for p in X for q in X if p < q}
+theta = xp.var(vartype=xp.continuous, name="theta")
 
-theta =  problem.addVariable(vartype=xp.continuous,name="theta")
+problem = xp.problem(name="Master problem")
+problem.addVariable([ypq[key] for key in ypq])
+problem.addVariable([zpq[key] for key in zpq])
+problem.addVariable(theta)
 
 # Objective function
-problem.setObjective(theta, sense=xp.minimize)
-#constraints
+obj = (theta)
+problem.setObjective(obj, sense=xp.minimize)
+# constraints
 for p in P:
     problem.addConstraint(xp.Sum(ypq[p, q] for q in X) == 1)
 
@@ -281,6 +257,8 @@ for q in X:
 
 for q in X:
     problem.addConstraint(xp.Sum(ypq[p, q] for p in P) <= 2)
+
+
 subproblem = xp.problem(name="Subproblem")
 xp_var = {
     k: {
@@ -363,11 +341,8 @@ for p in X:
 mindex=[]
 data = (mindex, subproblem)
 
-problem.setControl("presolve", 0)  # Disattiva completamente il presolve
+problem.setControl("presolve", 0)
 problem.addcbpreintsol(cb_preintsol,mindex,0)
-#problem.addcbmiplog(mipLog, None, 0)
-#problem.addcbintsol(cb_intsol, None,0)
-#problem.addcbnodecutoff(cb_nodecutoff,None,0)
 problem.addcboptnode(cb_optnode,mindex, 0)
 problem.solve()
 LB = problem.getObjVal()
