@@ -6,6 +6,7 @@ import time
 
 
 def cb_preintsol(problem,mindex,soltype,cutoff):
+    print(mindex)
     rowind = list(constraints2)
     rhs_values = []
     ypq_vals = problem.getCallbackSolution(list(ypq.values()))
@@ -20,7 +21,6 @@ def cb_preintsol(problem,mindex,soltype,cutoff):
             rhs_value = -Mp[p] * (1 - ypq_solution[p, q])
             rhs_values.append(rhs_value)
 
-    # Aggiorna solo i vincoli specifici
     subproblem.chgrhs(rowind[:len(rhs_values)], rhs_values)
     rowind2 = list(constraints3)
     rhs_values = []
@@ -35,7 +35,6 @@ def cb_preintsol(problem,mindex,soltype,cutoff):
     UB = subproblem.getObjVal()
     print("UB", UB)
     status = subproblem.getProbStatus()
-    print("theta_val", theta_val)
     if status == xp.lp_optimal:
         xp_solution = subproblem.getSolution(xp_var)
         xp_solution = subproblem.getSolution(xp_var)
@@ -55,53 +54,65 @@ def cb_preintsol(problem,mindex,soltype,cutoff):
         print(multipliers5)
         print(multipliers2)
         print(multipliers3)
-        colind = []
-        cutcoef = []
-        rhs_val = 0.0
+
 
         epsilon = 1e-7
+        colind = []
+        cutcoef = []
+        rhs_constant = 0.0
+
 
         for j, (p, q) in enumerate((p, q) for p in P for q in X):
-            rhs_val += multipliers4[j] * coordinates_p[p]['X']
-            rhs_val += multipliers5[j] * coordinates_p[p]['Y']
+            rhs_constant -= multipliers4[j] * coordinates_p[p]['X']
+
+        for j, (p, q) in enumerate((p, q) for p in P for q in X):
+            rhs_constant -= multipliers5[j] * coordinates_p[p]['Y']
 
         for j, (p, q) in enumerate((p, q) for p in P for q in X):
             if abs(multipliers2[j]) >= epsilon:
-                coef = multipliers2[j] * Mp[p]
+                rhs_constant -= multipliers2[j] * Mp[p]
+
                 colind.append(ypq[p, q])
-                cutcoef.append(coef)
-                rhs_val += coef
-            elif multipliers2[j] <= 0:
-                rhs_val += multipliers2[j] * Mp[p]
+                cutcoef.append(multipliers2[j] * Mp[p])
+
+            elif multipliers2[j] <= -epsilon:
+                rhs_constant -= multipliers2[j] * Mp[p]
 
         for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q):
             if abs(multipliers3[j]) >= epsilon:
-                coef = multipliers3[j] * M
-                colind.append(zpq[p, q])
-                cutcoef.append(coef)
-                rhs_val += coef
-            elif multipliers3[j] <= 0:
-                rhs_val += multipliers3[j] * M
+                rhs_constant -= multipliers3[j] * M
 
+                colind.append(zpq[p, q])
+                cutcoef.append(multipliers3[j] * M)
+
+            elif multipliers3[j] <= -epsilon:
+                rhs_constant -= multipliers3[j] * M
         colind.append(theta)
         cutcoef.append(-1.0)
+
+        rhs_final = -rhs_constant
         cuttype = [1]
         rowtype = ['L']
-        rhs = [rhs_val]
+        rhs = [rhs_final]
         start = [0, len(colind)]
+        thetasol = problem.getCallbackSolution(theta)
+        print("thetasol", thetasol)
         print(f"Check cut condition: theta = {thetasol}, UB = {UB}, ObjAbsAccuracy = {ObjAbsAccuracy}")
     if thetasol>=UB-ObjAbsAccuracy:
-        return (False, None)
+        return (False, UB)
     else:
+
         helplist = []
         problem.storecuts(2,cuttype, rowtype, rhs, start, helplist,colind, cutcoef)
         mindex.append(helplist[0])
-        return (True, None)
+        return (True, UB)
 
 
 def cb_optnode(problem,mindex):
     rowind = list(constraints2)
     rhs_values = []
+    s = []
+    problem.getlpsol(s, None, None, None)
     ypq_vals = problem.getCallbackSolution(list(ypq.values()))
     ypq_solution = dict(zip(ypq.keys(), ypq_vals))
     zpq_vals = problem.getCallbackSolution(list(zpq.values()))
@@ -111,7 +122,7 @@ def cb_optnode(problem,mindex):
     print(zpq_solution)
     print(thetasol)
     if len(mindex) > 0:
-        problem.loadcuts(1, -1, mindex)
+        problem.loadcuts(0, -1, mindex)
         print(len(mindex), " cuts added")
         del mindex[:]
     for p in P:
@@ -148,44 +159,56 @@ def cb_optnode(problem,mindex):
         multipliers3 = subproblem.getDuals(constraints3)
         multipliers4 = subproblem.getDuals(constraints4)
         multipliers5 = subproblem.getDuals(constraints5)
-        colind = []
-        cutcoef = []
-        rhs_val = 0.0
+        print(UB)
         print(f"Check cut condition: theta = {thetasol}, UB = {UB}, ObjAbsAccuracy = {ObjAbsAccuracy}")
         if thetasol>=UB-ObjAbsAccuracy:
             return 0
         else:
             epsilon = 1e-7
-            for j, (p, q) in enumerate((p, q) for p in P for q in X):
-                rhs_val += multipliers4[j] * coordinates_p[p]['X']
-                rhs_val += multipliers5[j] * coordinates_p[p]['Y']
 
+
+            colind = []
+            cutcoef = []
+            rhs_constant = 0.0
+
+            for j, (p, q) in enumerate((p, q) for p in P for q in X):
+                rhs_constant -= multipliers4[j] * coordinates_p[p]['X']
+
+
+            for j, (p, q) in enumerate((p, q) for p in P for q in X):
+                rhs_constant -= multipliers5[j] * coordinates_p[p]['Y']
 
             for j, (p, q) in enumerate((p, q) for p in P for q in X):
                 if abs(multipliers2[j]) >= epsilon:
-                    coef = multipliers2[j] * Mp[p]
+                    rhs_constant -= multipliers2[j] * Mp[p]
                     colind.append(ypq[p, q])
-                    cutcoef.append(coef)
-                    rhs_val += coef
-                elif multipliers2[j] <= 0:
-                    rhs_val += multipliers2[j] * Mp[p]
+                    cutcoef.append(multipliers2[j] * Mp[p])
+                elif multipliers2[j] <= -epsilon:
+                    rhs_constant -= multipliers2[j] * Mp[p]
+
 
             for j, (p, q) in enumerate((p, q) for p in X for q in X if p < q):
                 if abs(multipliers3[j]) >= epsilon:
-                    coef = multipliers3[j] * M
-                    colind.append(zpq[p, q])
-                    cutcoef.append(coef)
-                    rhs_val += coef
-                elif multipliers3[j] <= 0:
-                   rhs_val += multipliers3[j] * M
 
-            colind.append((problem.getIndex(theta)))
+                    rhs_constant -= multipliers3[j] * M
+
+                    colind.append(zpq[p, q])
+                    cutcoef.append(multipliers3[j] * M)
+
+                elif multipliers3[j] <= -epsilon:
+                    rhs_constant -= multipliers3[j] * M
+
+
+            colind.append(theta)
             cutcoef.append(-1.0)
+
+            rhs_final = -rhs_constant
             cuttype = [1]
             rowtype = ['L']
-            rhs = [rhs_val]
+            rhs = [rhs_final]
             start = [0,len(colind)]
             problem.addcuts(cuttype, rowtype, rhs, start, colind, cutcoef)
+            thetasol=problem.getCallbackSolution(theta)
             return 0
 
 start_time = time.time()
@@ -341,8 +364,12 @@ for p in X:
 mindex=[]
 data = (mindex, subproblem)
 
-problem.setControl("presolve", 0)
+problem.setControl("presolve", 0)  # Disattiva completamente il presolve
+problem.setControl('CUTSTRATEGY', 1)  # Abilita user cuts dal pool  # Xpress carica automaticamente
 problem.addcbpreintsol(cb_preintsol,mindex,0)
+#problem.addcbmiplog(mipLog, None, 0)
+#problem.addcbintsol(cb_intsol, None,0)
+#problem.addcbnodecutoff(cb_nodecutoff,None,0)
 problem.addcboptnode(cb_optnode,mindex, 0)
 problem.solve()
 LB = problem.getObjVal()
