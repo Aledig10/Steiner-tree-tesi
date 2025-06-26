@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import sys
 
 
 class Callbacks:
@@ -11,15 +12,11 @@ class Callbacks:
         self.Integer_index=[]
 
     def cb_preintsol(self,problem, mindex, soltype, cutoff):
-        print(mindex)
-        rhs_values = []
+        print('===================== PREINTSOL ========================')
         ypq_vals = problem.getCallbackSolution(list(ypq.values()))
         ypq_solution = dict(zip(ypq.keys(), ypq_vals))
         zpq_vals = problem.getCallbackSolution(list(zpq.values()))
         zpq_solution = dict(zip(zpq.keys(), zpq_vals))
-        theta_val = problem.getCallbackSolution(theta)
-        print(ypq_solution)
-        print(zpq_solution)
         (optimum, valori, duali) = subproblem(Mp, M, coordinates_p, ypq_solution, zpq_solution)
         (colind, cutcoef, rhs_final,index_y,index_z) = cut_generation(duali, coordinates_p, Mp, M)
         cuttype = [1]
@@ -27,9 +24,9 @@ class Callbacks:
         rhs = [rhs_final]
         start = [0, len(colind)]
         thetasol = problem.getCallbackSolution(theta)
-        print("thetasol", thetasol)
-        print(f"Check cut condition: theta = {thetasol}, UB = {optimum}, ObjAbsAccuracy = {ObjAbsAccuracy}")
+        print(f"Check cut condition: theta = {thetasol}, subproblem value = {optimum}, ObjAbsAccuracy = {ObjAbsAccuracy}")
         if thetasol >= optimum - ObjAbsAccuracy:
+            print('===================== PREINTSOL : FALSE ========================')
             return (False, optimum)
         else:
             value=0
@@ -37,7 +34,7 @@ class Callbacks:
                 value += ypq_val[p, q] * cutcoef[j]
             for j, (p, q) in enumerate(index_z):
                 value = value + zpq_val[p, q] * cutcoef[j + len(index_y)]
-            if value - rhs_final - optimum > 0:
+            if value - rhs_final - optimum_general > 0:
                 print("TAGLIO VIOLATO IN PREINTSOL")
             helplist = []
             problem.storecuts(2, cuttype, rowtype, rhs, start, helplist, colind, cutcoef)
@@ -49,25 +46,25 @@ class Callbacks:
             indici = list(ypq_indices) + list(zpq_indices) + [theta_index]
             self.Integer_index.append(indici)
             self.Integer_solution.append(soluzione)
+            print('===================== PREINTSOL:TRUE ========================')
             return (True, optimum)
 
     def cb_optnode(self,problem, mindex):
-        rhs_values = []
+        print('===================== OPTNODE ========================')
         ypq_vals = problem.getCallbackSolution(list(ypq.values()))
         ypq_solution = dict(zip(ypq.keys(), ypq_vals))
         zpq_vals = problem.getCallbackSolution(list(zpq.values()))
         zpq_solution = dict(zip(zpq.keys(), zpq_vals))
         thetasol = problem.getCallbackSolution(theta)
-        print(ypq_solution)
-        print(zpq_solution)
-        print(thetasol)
-
+        for i, val in zip(self.Integer_index, self.Integer_solution):
+          problem.addmipsol(val,i, 'From_preintsol')
+        del self.Integer_index[:]
+        del self.Integer_solution[:]
         if len(mindex) > 0:
             problem.loadcuts(0, -1, mindex)
             print(len(mindex), " cuts added")
             del mindex[:]
         (optimum, valori, duali) = subproblem(Mp, M, coordinates_p, ypq_solution, zpq_solution)
-        (colind, cutcoef, rhs_final, index_y, index_z) = cut_generation(duali, coordinates_p, Mp,M)
         soluzione = list(ypq_solution.values()) + list(zpq_solution.values()) + [optimum]
         ypq_indices = [problem.getIndex(ypq[p, q]) for p in P for q in X]
         zpq_indices = [problem.getIndex(zpq[p, q]) for p in X for q in X if p < q]
@@ -75,11 +72,12 @@ class Callbacks:
         indici = list(ypq_indices) + list(zpq_indices) + [theta_index]
         integer = self.is_solution_integer(soluzione)
         if integer == True:
-            problem.addmipsol(soluzione, indici, 'name')
+            problem.addmipsol(soluzione, indici, 'from_optnode')
 
-        print(f"Check cut condition: theta = {thetasol}, UB = {optimum}, ObjAbsAccuracy = {ObjAbsAccuracy}")
+        print(f"Check cut condition: theta = {thetasol}, subproblem value = {optimum}, ObjAbsAccuracy = {ObjAbsAccuracy}")
         if thetasol >= optimum - ObjAbsAccuracy:
             return 0
+            print('===================== OPTNODE: EXIT ========================')
         else:
             epsilon = 1e-7
             (colind, cutcoef, rhs_final, index_y, index_z) = cut_generation(duali, coordinates_p, Mp,M)
@@ -94,7 +92,7 @@ class Callbacks:
                 value += ypq_val[p, q] * cutcoef[j]
             for j, (p, q) in enumerate(index_z):
                 value= value+zpq_val[p,q]*cutcoef[j+len(index_y)]
-            if value-rhs_final-optimum>0:
+            if value-rhs_final-optimum_general>0:
                 print("TAGLIO VIOLATO IN OPTNODE")
             incumbent = problem.attributes.mipobjval
             current_bound = problem.attributes.lpobjval
@@ -103,12 +101,10 @@ class Callbacks:
             print(f"UB: {incumbent}")
             print(f"Current LB: {current_bound}")
             print(f"Global LB: {global_bound}")
-            print(f"Gap: {incumbent - global_bound}")
-            print(f"Gap relativo target: {problem.controls.miprelstop}")
-            print(f"Gap assoluto target: {problem.controls.mipabsstop}")
             print(f"Gap corrente calcolato: {(problem.attributes.mipobjval - problem.attributes.bestbound) / abs(problem.attributes.mipobjval)}")
             node = problem.attributes.currentnode
             print(f"Node: {node}")
+            print('===================== OPTNODE: RIENTRO ========================')
             return 0
 
     def is_solution_integer(self,valori, tolerance=1e-6):
@@ -286,6 +282,7 @@ def subproblem(Mp,M,coordinates_p,ypq_values,zpq_values):
                 constraint3 = vpq[p, q] - spq[p, q] >= -M * (1 - zpq_values[p, q])
                 subproblem.addConstraint(constraint3)
                 constraints3.append(constraint3)
+    subproblem.setControl('outputlog',0)
     subproblem.solve()
     optimum = subproblem.getObjVal()
     status = subproblem.getProbStatus()
@@ -318,8 +315,6 @@ def cut_generation(duali,coordinates_p,Mp,M):
     multipliers5=duali[5]
     multipliers3=duali[3]
     multipliers2=duali[2]
-    print(multipliers2)
-
     for j, (p, q) in enumerate((p, q) for p in P for q in X):
          rhs_constant -= multipliers4[j] * coordinates_p[p]['X']
 
@@ -384,23 +379,53 @@ def nodeInfeasible(problem, object):
     print("Node {0} infeasible".format(node))
 
 
+def plot_the_graph(coordinates_p,xp_solution,ypq_solution,zpq_solution):
+    #Building the plots
+    plt.figure(figsize=(8, 8))
+    for p in P:
+        plt.scatter(coordinates_p[p]['X'], coordinates_p[p]['Y'], color='blue', s=50,
+                    label='Points P' if p == list(P)[0] else "")
+
+    for p in X:
+        plt.scatter(xp_solution[p]['X'], xp_solution[p]['Y'], color='red', s=50,
+                    label='Points X' if p == list(X)[0] else "")
+
+    for (p, q), val in ypq_solution.items():
+        if val == 1.0:
+            x1, y1 = coordinates_p[p]["X"], coordinates_p[p]["Y"]
+            x2, y2 = xp_solution[q]["X"], xp_solution[q]["Y"]
+            if x1 is not None and x2 is not None:
+                plt.plot([x1, x2], [y1, y2], 'g--', linewidth=1, label="ypq" if (p, q) == (0, 1) else "")
+
+    for (p, q), val in zpq_solution.items():
+        if val == 1:
+            x1, y1 = xp_solution[p]["X"], xp_solution[p]["Y"]
+            x2, y2 = xp_solution[q]["X"], xp_solution[q]["Y"]
+            if x1 is not None and x2 is not None:
+                plt.plot([x1, x2], [y1, y2], 'r-', linewidth=2, label="zpq" if (p, q) == (0, 1) else "")
+
+    plt.title("Points in the 2D space")
+    plt.xlabel("X")
+    plt.ylabel("Y")
+    plt.grid(True)
+    plt.gca().set_aspect('equal', adjustable='datalim')
+    plt.show()
+
+
 
 
 start_time = time.time()
-# Leggi i dati dal file CSV
-data = pd.read_csv('istanza3.csv', sep='\s+')
+file_name= sys.argv[1]
+data = pd.read_csv(file_name, sep='\s+')
 data = data.drop(data.columns[0], axis=1)
 data = data.reset_index()
 
-print(data.index)
+
 data['id'] = data.index
 coordinates_p = data.set_index('id')[['X', 'Y']].T.to_dict()
-print(coordinates_p)
 P = range(len(data))  # Set of given nodes
-print(P)
 num_steiner_nodes = len(data) - 2  # Number of Steiner Nodes
 X = range(num_steiner_nodes)  # Set of Steiner nodes
-print(X)
 xp.init('C:/xpressmp/bin/xpauth.xpr')
 Mp=[]
 ObjAbsAccuracy=0.00001
@@ -415,7 +440,6 @@ for p in P:
                     distanza = distanza1
     Mp.append(distanza)
     distanza = 0
-print(Mp)
 M=0
 for p in P:
     for z in P:
@@ -461,24 +485,19 @@ mindex=[]
 data = (mindex, subproblem)
 problem.controls.cutfreq = 0
 problem.controls.miprelstop = 0.0001
-problem.controls.mipabsstop = 1e-6
-#problem.controls.outputlog = 1
-#problem.controls.miplog = 3
-(ypq_val,zpq_val,optimum)=MINLP_formulation(Mp,M,coordinates_p)
+problem.controls.threads = 1
+(ypq_val,zpq_val,optimum_general)=MINLP_formulation(Mp,M,coordinates_p)
 problem.setControl("presolve", 0)
-problem.setControl('CUTSTRATEGY', 1)
+problem.setControl('CUTSTRATEGY', 0)
 problem.setControl("miprefineiterlimit", 0)
 problem.addcbpreintsol(g.cb_preintsol,mindex,0)
-problem.addcbnodecutoff(node_cutoff_callback,mindex,0)
+#problem.addcbnodecutoff(node_cutoff_callback,mindex,0)
 #problem.addcbmessage(log_callback, mindex, 0)
-problem.addcbintsol(cb_intsol, None,0)
-
+#problem.addcbintsol(cb_intsol, None,0)
 #problem.addcbnodecutoff(cb_nodecutoff,None,0)
-problem.addcbinfnode(nodeInfeasible, None, 0)
+#problem.addcbinfnode(nodeInfeasible, None, 0)
 problem.addcboptnode(g.cb_optnode,mindex, 0)
 problem.solve()
-print(problem.controls)
-problem.writeprtsol("mysol.sol")
 LB = problem.getObjVal()
 print("LB", LB)
 status = problem.getProbStatus()
@@ -497,31 +516,4 @@ xp_solution = valori[0]
 end_time = time.time()
 execution_time = end_time - start_time
 print(f"Tempo di esecuzione: {execution_time:.6f} secondi")
-plt.figure(figsize=(8, 8))
-for p in P:
-    plt.scatter(coordinates_p[p]['X'], coordinates_p[p]['Y'], color='blue', s=50, label='Points P' if p == list(P)[0] else "")
-
-for p in X:
-    plt.scatter(xp_solution[p]['X'], xp_solution[p]['Y'], color='red', s=50, label='Points X' if p == list(X)[0] else "")
-
-for (p, q), val in ypq_solution.items():
-    if val==1.0:
-        x1, y1 = coordinates_p[p]["X"], coordinates_p[p]["Y"]
-        x2, y2 = xp_solution[q]["X"], xp_solution[q]["Y"]
-        if x1 is not None and x2 is not None:
-            plt.plot([x1, x2], [y1, y2], 'g--', linewidth=1, label="ypq" if (p, q) == (0, 1) else "")
-
-
-for (p, q), val in zpq_solution.items():
-    if val==1:
-        x1, y1 = xp_solution[p]["X"], xp_solution[p]["Y"]
-        x2, y2 = xp_solution[q]["X"], xp_solution[q]["Y"]
-        if x1 is not None and x2 is not None:
-            plt.plot([x1, x2], [y1, y2], 'r-', linewidth=2, label="zpq" if (p, q) == (0, 1) else "")
-
-plt.title("Points in the 2D space")
-plt.xlabel("X")
-plt.ylabel("Y")
-plt.grid(True)
-plt.gca().set_aspect('equal', adjustable='datalim')
-plt.show()
+plot_the_graph(coordinates_p,xp_solution,ypq_solution,zpq_solution)
