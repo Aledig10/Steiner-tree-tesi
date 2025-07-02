@@ -13,16 +13,30 @@ class Callbacks:
         self.Integer_solution=[]
         self.Integer_index=[]
         self.best_solution=0
+        self.best=[]
 
-    def cb_preintsol(self,problem, mindex, soltype, cutoff):
+    def cb_preintsol(self,problem,data, soltype, cutoff):
         try:
+            mindex=data[0]
+            P=data[1]
+            X=data[2]
+            Mp=data[3]
+            M=data[4]
+            coordinates_p=data[5]
+            ypq=data[6]
+            zpq=data[7]
+            theta=data[8]
+            ypq_val=data[9]
+            zpq_val=data[10]
+            optimum_general=data[11]
+            ObjAbsAccuracy=0.00001
             print('===================== PREINTSOL ========================')
             ypq_vals = problem.getCallbackSolution(list(ypq.values()))
             ypq_solution = dict(zip(ypq.keys(), ypq_vals))
             zpq_vals = problem.getCallbackSolution(list(zpq.values()))
             zpq_solution = dict(zip(zpq.keys(), zpq_vals))
-            (optimum, valori, duali) = subproblem(Mp, M, coordinates_p, ypq_solution, zpq_solution)
-            (colind, cutcoef, rhs_final,index_y,index_z) = cut_generation(duali, coordinates_p, Mp, M)
+            (optimum, valori, duali) = subproblem(Mp, M, coordinates_p, ypq_solution, zpq_solution,X,P)
+            (colind, cutcoef, rhs_final,index_y,index_z) = cut_generation(duali, coordinates_p, Mp, M,ypq,zpq, theta, P, X)
             cuttype = [1]
             rowtype = ['L']
             rhs = [rhs_final]
@@ -40,6 +54,7 @@ class Callbacks:
                     value = value + zpq_val[p, q] * cutcoef[j + len(index_y)]
                 if value - rhs_final - optimum_general > 0:
                     print("TAGLIO VIOLATO IN PREINTSOL")
+                    pdb.set_trace()
                 helplist = []
                 problem.storecuts(2, cuttype, rowtype, rhs, start, helplist, colind, cutcoef)
                 mindex.append(helplist[0])
@@ -53,33 +68,51 @@ class Callbacks:
                     self.Integer_index.append(indici)
                     self.Integer_solution.append(soluzione)
                 print('===================== PREINTSOL:TRUE ========================')
-                return (True, optimum)
+                return (True,optimum)
         except Exception as e:
             print("ERRORE:", e)
 
-    def cb_optnode(self,problem, mindex):
+    def cb_optnode(self,problem, data):
         try:
             print('===================== OPTNODE ========================')
+            mindex=data[0]
+            P=data[1]
+            X=data[2]
+            Mp=data[3]
+            M=data[4]
+            ypq=data[6]
+            zpq=data[7]
+            theta=data[8]
+            ypq_val=data[9]
+            zpq_val=data[10]
+            optimum_general=data[11]
+            ObjAbsAccuracy=0.00001
+            coordinates_p=data[5]
             ypq_vals = problem.getCallbackSolution(list(ypq.values()))
             ypq_solution = dict(zip(ypq.keys(), ypq_vals))
             zpq_vals = problem.getCallbackSolution(list(zpq.values()))
             zpq_solution = dict(zip(zpq.keys(), zpq_vals))
             thetasol = problem.getCallbackSolution(theta)
             for i, val in zip(self.Integer_index, self.Integer_solution):
-              problem.addmipsol(val,i, 'From_preintsol')
+                print(i)
+                problem.addmipsol(val,i, 'From_preintsol')
+            print("soluzione")
+            print(self.Integer_solution)
+            print(self.best_solution)
             del self.Integer_index[:]
             del self.Integer_solution[:]
             if len(mindex) > 0:
                 problem.loadcuts(0, -1, mindex)
                 print(len(mindex), " cuts added")
                 del mindex[:]
-            (optimum, valori, duali) = subproblem(Mp, M, coordinates_p, ypq_solution, zpq_solution)
+            (optimum, valori, duali) = subproblem(Mp, M, coordinates_p, ypq_solution, zpq_solution,X,P)
             soluzione = list(ypq_solution.values()) + list(zpq_solution.values()) + [optimum]
             ypq_indices = [problem.getIndex(ypq[p, q]) for p in P for q in X]
             zpq_indices = [problem.getIndex(zpq[p, q]) for p in X for q in X if p < q]
             theta_index = problem.getIndex(theta)
             indici = list(ypq_indices) + list(zpq_indices) + [theta_index]
             integer = self.is_solution_integer(soluzione)
+
             if integer == True:
                 if thetasol >= self.best_solution + ObjAbsAccuracy:
                     problem.addmipsol(soluzione, indici, 'from_optnode')
@@ -90,7 +123,7 @@ class Callbacks:
                 print('===================== OPTNODE: EXIT ========================')
             else:
                 epsilon = 1e-7
-                (colind, cutcoef, rhs_final, index_y, index_z) = cut_generation(duali, coordinates_p, Mp,M)
+                (colind, cutcoef, rhs_final, index_y, index_z) = cut_generation(duali, coordinates_p, Mp,M,ypq,zpq, theta, P, X)
                 cuttype = [1]
                 rowtype = ['L']
                 rhs = [rhs_final]
@@ -104,6 +137,7 @@ class Callbacks:
                     value= value+zpq_val[p,q]*cutcoef[j+len(index_y)]
                 if value-rhs_final-optimum_general>0:
                     print("TAGLIO VIOLATO IN OPTNODE")
+                    pdb.set_trace()
             incumbent = problem.attributes.mipobjval
             current_bound = problem.attributes.lpobjval
             global_bound = problem.attributes.bestbound
@@ -124,7 +158,7 @@ class Callbacks:
                 return False
         return True
 
-def MINLP_formulation(Mp,M,coordinates_p):
+def MINLP_formulation(Mp,M,coordinates_p,X,P,d):
     xp_var = {
         k: {
             'X': xp.var(vartype=xp.continuous),
@@ -214,7 +248,7 @@ def MINLP_formulation(Mp,M,coordinates_p):
 
 
 
-def subproblem(Mp,M,coordinates_p,ypq_values,zpq_values):
+def subproblem(Mp,M,coordinates_p,ypq_values,zpq_values,X,P):
     subproblem = xp.problem(name="Subproblem")
     xp_var = {
         k: {
@@ -317,7 +351,7 @@ def subproblem(Mp,M,coordinates_p,ypq_values,zpq_values):
     return (optimum,valori,duali)
 
 
-def cut_generation(duali,coordinates_p,Mp,M):
+def cut_generation(duali,coordinates_p,Mp,M,ypq,zpq,theta,P,X):
     colind = []
     cutcoef = []
     rhs_constant = 0.0
@@ -390,7 +424,7 @@ def nodeInfeasible(problem, object):
     print("Node {0} infeasible".format(node))
 
 
-def plot_the_graph(coordinates_p,xp_solution,ypq_solution,zpq_solution):
+def plot_the_graph(coordinates_p,xp_solution,ypq_solution,zpq_solution,P,X):
     #Building the plots
     plt.figure(figsize=(8, 8))
     for p in P:
@@ -424,109 +458,109 @@ def plot_the_graph(coordinates_p,xp_solution,ypq_solution,zpq_solution):
 
 
 
+def solve():
+    start_time = time.time()
+    file_name= sys.argv[1]
+    data = pd.read_csv(file_name, sep='\s+')
+    data = data.drop(data.columns[0], axis=1)
+    data = data.reset_index()
+    data['id'] = data.index
+    coordinates_p = data.set_index('id')[['X', 'Y']].T.to_dict()
+    P = range(len(data))  # Set of given nodes
+    num_steiner_nodes = len(data) - 2  # Number of Steiner Nodes
+    X = range(num_steiner_nodes)  # Set of Steiner nodes
+    xp.init('C:/xpressmp/bin/xpauth.xpr')
+    Mp=[]
+    ObjAbsAccuracy=0.00001
+    distanza =0
+    d = 2  # Space dimension
+    for p in P:
+        for z in P:
+                if z != p:
+                    distanza1 = np.sqrt((coordinates_p[p]['X'] - coordinates_p[z]['X']) ** 2 + (
+                                coordinates_p[p]['Y'] - coordinates_p[z]['Y']) ** 2)
+                    if distanza < distanza1:
+                        distanza = distanza1
+        Mp.append(distanza)
+        distanza = 0
+    M=0
+    for p in P:
+        for z in P:
+                if z != p:
+                    distanza1 = np.sqrt((coordinates_p[p]['X'] - coordinates_p[z]['X']) ** 2 + (
+                                coordinates_p[p]['Y'] - coordinates_p[z]['Y']) ** 2)
+                    if M < distanza1:
+                        M= distanza1
+    #Start defining the MASTER PROBLEM
+    # Decision variable
+    ypq = {(p, q): xp.var(vartype=xp.binary, ub=1, lb=0, name=f"y_{p}_{q}") for p in P for q in X}
+    zpq = {(p, q): xp.var(vartype=xp.binary, ub=1, lb=0, name=f"z_{p}_{q}") for p in X for q in X if p < q}
+    theta = xp.var(vartype=xp.continuous, name="theta")
 
-start_time = time.time()
-file_name= sys.argv[1]
-data = pd.read_csv(file_name, sep='\s+')
-data = data.drop(data.columns[0], axis=1)
-data = data.reset_index()
-data['id'] = data.index
-coordinates_p = data.set_index('id')[['X', 'Y']].T.to_dict()
-P = range(len(data))  # Set of given nodes
-num_steiner_nodes = len(data) - 2  # Number of Steiner Nodes
-X = range(num_steiner_nodes)  # Set of Steiner nodes
-xp.init('C:/xpressmp/bin/xpauth.xpr')
-Mp=[]
-ObjAbsAccuracy=0.00001
-distanza =0
-d = 2  # Space dimension
-for p in P:
-    for z in P:
-            if z != p:
-                distanza1 = np.sqrt((coordinates_p[p]['X'] - coordinates_p[z]['X']) ** 2 + (
-                            coordinates_p[p]['Y'] - coordinates_p[z]['Y']) ** 2)
-                if distanza < distanza1:
-                    distanza = distanza1
-    Mp.append(distanza)
-    distanza = 0
-M=0
-for p in P:
-    for z in P:
-            if z != p:
-                distanza1 = np.sqrt((coordinates_p[p]['X'] - coordinates_p[z]['X']) ** 2 + (
-                            coordinates_p[p]['Y'] - coordinates_p[z]['Y']) ** 2)
-                if M < distanza1:
-                    M= distanza1
-#Start defining the MASTER PROBLEM
-# Decision variable
-ypq = {(p, q): xp.var(vartype=xp.binary, ub=1, lb=0, name=f"y_{p}_{q}") for p in P for q in X}
-zpq = {(p, q): xp.var(vartype=xp.binary, ub=1, lb=0, name=f"z_{p}_{q}") for p in X for q in X if p < q}
-theta = xp.var(vartype=xp.continuous, name="theta")
+    problem = xp.problem(name="Master problem")
+    problem.addVariable([ypq[key] for key in ypq])
+    problem.addVariable([zpq[key] for key in zpq])
+    problem.addVariable(theta)
 
-problem = xp.problem(name="Master problem")
-problem.addVariable([ypq[key] for key in ypq])
-problem.addVariable([zpq[key] for key in zpq])
-problem.addVariable(theta)
+    # Objective function
+    obj = (theta)
+    problem.setObjective(obj, sense=xp.minimize)
+    # constraints
+    for p in P:
+        problem.addConstraint(xp.Sum(ypq[p, q] for q in X) == 1)
 
-# Objective function
-obj = (theta)
-problem.setObjective(obj, sense=xp.minimize)
-# constraints
-for p in P:
-    problem.addConstraint(xp.Sum(ypq[p, q] for q in X) == 1)
+    for q in X:
+        problem.addConstraint(
+            xp.Sum(ypq[p, q] for p in P)
+            + xp.Sum(zpq[p, q] for p in X if p < q)
+            + xp.Sum(zpq[q, p] for p in X if p > q) == 3
+        )
 
-for q in X:
-    problem.addConstraint(
-        xp.Sum(ypq[p, q] for p in P)
-        + xp.Sum(zpq[p, q] for p in X if p < q)
-        + xp.Sum(zpq[q, p] for p in X if p > q) == 3
-    )
+    for q in X:
+        if q > 0:
+            problem.addConstraint(xp.Sum(zpq[p, q] for p in X if p < q) == 1)
 
-for q in X:
-    if q > 0:
-        problem.addConstraint(xp.Sum(zpq[p, q] for p in X if p < q) == 1)
+    for q in X:
+        problem.addConstraint(xp.Sum(ypq[p, q] for p in P) <= 2)
 
-for q in X:
-    problem.addConstraint(xp.Sum(ypq[p, q] for p in P) <= 2)
+    g = Callbacks()
+    mindex=[]
+    problem.controls.cutfreq = 0
+    problem.controls.miprelstop = 0.0001
+    problem.controls.threads = 1
+    (ypq_val,zpq_val,optimum_general)=MINLP_formulation(Mp,M,coordinates_p,X,P,d)
+    data = (mindex, P, X, Mp,M,coordinates_p,ypq,zpq,theta,ypq_val,zpq_val,optimum_general)
+    problem.setControl("presolve", 0)
+    problem.setControl('CUTSTRATEGY', 0)
+    problem.setControl("miprefineiterlimit", 0)
+    problem.addcbpreintsol(g.cb_preintsol,data,0)
+    #problem.addcbnodecutoff(node_cutoff_callback,mindex,0)
+    #problem.addcbmessage(log_callback, mindex, 0)
+    #problem.addcbintsol(cb_intsol, None,0)
+    #problem.addcbnodecutoff(cb_nodecutoff,None,0)
+    #problem.addcbinfnode(nodeInfeasible, None, 0)
+    problem.addcboptnode(g.cb_optnode,data, 0)
+    problem.solve()
+    LB = problem.getObjVal()
+    print("LB", LB)
+    status = problem.getProbStatus()
+    if status == xp.mip_optimal:
+        ypq_solution=problem.getSolution(ypq)
+        zpq_solution = problem.getSolution(zpq)
 
-g = Callbacks()
-mindex=[]
-data = (mindex, subproblem)
-problem.controls.cutfreq = 0
-problem.controls.miprelstop = 0.0001
-problem.controls.threads = 1
-(ypq_val,zpq_val,optimum_general)=MINLP_formulation(Mp,M,coordinates_p)
-problem.setControl("presolve", 0)
-problem.setControl('CUTSTRATEGY', 0)
-problem.setControl("miprefineiterlimit", 0)
-problem.addcbpreintsol(g.cb_preintsol,mindex,0)
-#problem.addcbnodecutoff(node_cutoff_callback,mindex,0)
-#problem.addcbmessage(log_callback, mindex, 0)
-#problem.addcbintsol(cb_intsol, None,0)
-#problem.addcbnodecutoff(cb_nodecutoff,None,0)
-#problem.addcbinfnode(nodeInfeasible, None, 0)
-problem.addcboptnode(g.cb_optnode,mindex, 0)
-problem.solve()
-LB = problem.getObjVal()
-print("LB", LB)
-status = problem.getProbStatus()
-if status == xp.mip_optimal:
-    ypq_solution=problem.getSolution(ypq)
-    zpq_solution = problem.getSolution(zpq)
-
-    print("Optimal solution found")
-    print("ypq:", ypq_solution)
-    print("zpq:", zpq_solution)
-else:
-    print(f"Error status: {status}")
-#Now we need to extract the values of the subproblem
-(optimum,valori,duali)=subproblem(Mp,M,coordinates_p,ypq_solution,zpq_solution)
-xp_solution = valori[0]
-end_time = time.time()
-execution_time = end_time - start_time
-print(f"Tempo di esecuzione: {execution_time:.6f} secondi")
-plot_the_graph(coordinates_p,xp_solution,ypq_solution,zpq_solution)
+        print("Optimal solution found")
+        print("ypq:", ypq_solution)
+        print("zpq:", zpq_solution)
+    else:
+        print(f"Error status: {status}")
+    #Now we need to extract the values of the subproblem
+    (optimum,valori,duali)=subproblem(Mp,M,coordinates_p,ypq_solution,zpq_solution,X, P)
+    xp_solution = valori[0]
+    end_time = time.time()
+    execution_time = end_time - start_time
+    print(f"Tempo di esecuzione: {execution_time:.6f} secondi")
+    plot_the_graph(coordinates_p,xp_solution,ypq_solution,zpq_solution,P,X)
 
 
-#if __name__ == '__main__':
- #   solve()
+if __name__ == '__main__':
+   solve()
