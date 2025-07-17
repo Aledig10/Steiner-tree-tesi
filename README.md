@@ -31,7 +31,7 @@ This repository contains four main Python files:
 
 4. Steiner_Tree_Benders.py – Contains both the full formulation and the Branch-and-Cut implementation of the first Benders decomposition.
 
-# ⏱️ How to run Steiner_Tree_Benders.py
+# 🌳 How to run Steiner_Tree_Benders.py
 To execute the full mathematical formulation of the Steiner Tree problem:
 ```
 python Steiner_Tree_Benders.py Name_instance 0
