@@ -1,8 +1,8 @@
-# Project aim
+# 🧮 Project aim 
 The aim of this project is to explore the Euclidean Steiner Tree problem, seeking a faster approach compared to the mathematical programming formulation proposed by Fampa and Maculan in 2004, which is a MINLP problem and known to be NP-hard.
 The main idea is to apply Benders decomposition to the problem, in order to separate the resolution of the integer and continuous variables.
 
-# Main work
+# ⚙️ Main work
 The workflow begins with implementing the Fampa-Maculan formulation for the Euclidean Steiner Tree problem, analyzing its computational drawbacks.
 Subsequently, we attempt to develop a Benders decomposition using the cutting plane method. The approach involves iteratively solving a master problem and, at each iteration, adding a cut generated from the corresponding subproblem.
 
@@ -18,7 +18,7 @@ In the first variant, to further improve performance beyond the standard cutting
 
 
 
-# Code
+# 💻 Code
 To verify whether the use of Benders decomposition leads to faster performance compared to solving the full mathematical formulation, we implemented both models using FICO Xpress 9.6 with its Python interface.
 
 This repository contains four main Python files:
@@ -31,7 +31,7 @@ This repository contains four main Python files:
 
 4. Steiner_Tree_Benders.py – Contains both the full formulation and the Branch-and-Cut implementation of the first Benders decomposition.
 
-# How to run Steiner_Tree_Benders.py
+# ⏱️ How to run Steiner_Tree_Benders.py
 To execute the full mathematical formulation of the Steiner Tree problem:
 ```
 python Steiner_Tree_Benders.py Name_instance 0
@@ -42,7 +42,7 @@ python Steiner_Tree_Benders.py Name_instance 1
 ```
 Replace Name_instance with the actual name of the problem instance you want to solve.
 
-# References
+# 🧷 References
 - Marcia Fampa and Nelson Maculan. Using a conic formulation for finding steiner min-
 imal trees: Theory and practice in optimization. guest editors: José mario martínez
 and jin yun yuan. Numerical Algorithms, 35, 04 2004.
