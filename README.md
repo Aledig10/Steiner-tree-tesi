@@ -43,7 +43,5 @@ python Steiner_Tree_Benders.py Name_instance 1
 Replace Name_instance with the actual name of the problem instance you want to solve.
 
 # 🧷 References
-- Marcia Fampa and Nelson Maculan. Using a conic formulation for finding steiner min-
-imal trees: Theory and practice in optimization. guest editors: José mario martínez
-and jin yun yuan. Numerical Algorithms, 35, 04 2004.
+- Marcia Fampa and Nelson Maculan. Using a conic formulation for finding steiner minimal trees: Theory and practice in optimization. guest editors: José mario martínez and jin yun yuan. Numerical Algorithms, 35, 04 2004.
 - Benders, J. F. (Sept. 1962), "Partitioning procedures for solving mixed-variables programming problems", Numerische Mathematik 4(3): 238–252.
