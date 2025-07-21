@@ -6,6 +6,27 @@ import time
 import sys
 import pdb
 
+# In this Python file, we solve the Euclidean Steiner Tree problem using the Fampa-Maculan mathematical
+# programming model implemented with FICO Xpress 9.6.
+# The mathematical programming model is defined as follows:
+# Given a set P of terminal points, and setting the number of Steiner points equal
+# to the number of terminal points minus 2, the model is formulated as follows:
+
+# Minimize:  sum_{p<q ∈ X} v_pq + sum_{p ∈ P, q ∈ X} w_pq
+#s.t
+# sum_{q ∈ X} y_pq == 1   ∀ p ∈ P
+# sum_{p ∈ P} y_pq + sum_{p < q ∈ X} z_pq + sum_{p > q ∈ X} z_qp == 3   ∀ q ∈ X
+# sum_{p < q ∈ X} z_pq == 1   ∀ q ∈ X, q > 1
+# ||x_q - x_p||^2 ≤ s_pq²   ∀ p < q ∈ X
+# ||x_q[k] - zeta_p[k]||^2 ≤ t_pq²   ∀ p ∈ P, q ∈ X
+# w_pq ≥ t_pq - M_p(1 - y_pq)   ∀ p ∈ P, q ∈ X
+# v_pq ≥ s_pq - M(1 - z_pq)   ∀ p < q ∈ X
+# y_pq ∈ {0,1}  ∀ p ∈ P, q ∈ X
+# z_pq ∈ {0,1}  ∀ p,q ∈ X, p<q
+# x_p ∈  R^n
+
+
+
 def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
     # problem creation
     total = xp.problem(name="Steiner Tree")
@@ -26,13 +47,16 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
                                           vartype=xp.continuous) for p in X for q in X if p < q}
 
     # Objective function
+    #Minimize:  sum_{p<q ∈ X} v_pq + sum_{p ∈ P, q ∈ X} w_pq
     obj = (xp.Sum(vpq[p, q] for p in X for q in X if p < q) + xp.Sum(wpq[p, q] for p in P for q in X))
     total.setObjective(obj, sense=xp.minimize)
 
     # Constraints
+    # sum_{q ∈ X} y_pq == 1   ∀ p ∈ P
     for p in P:
         total.addConstraint(xp.Sum(ypq[p, q] for q in X) == 1)
 
+    # sum_{p ∈ P} y_pq + sum_{p < q ∈ X} z_pq + sum_{p > q ∈ X} z_qp == 3   ∀ q ∈ X
     for q in X:
         total.addConstraint(
             xp.Sum(ypq[p, q] for p in P)
@@ -40,6 +64,7 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
             + xp.Sum(zpq[q, p] for p in X if p > q) == 3
         )
 
+    # sum_{p < q ∈ X} z_pq == 1   ∀ q ∈ X, q > 1
     for q in X:
         if q > 1:
             total.addConstraint(xp.Sum(zpq[p, q] for p in X if p < q) == 1)
@@ -47,6 +72,7 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
     #for q in X:
      #   total.addConstraint(xp.Sum(ypq[p, q] for p in P) <= 2)
 
+    # ||x_q - x_p||^2 ≤ s_pq²   ∀ p < q ∈ X
     for p in X:
         for q in X:
             if p < q:
@@ -56,7 +82,7 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
                 )
                 total.addConstraint(lhs <= spq[p, q] ** 2)
 
-    # Vincoli tra punti dati (P) e Steiner
+    # ||x_q[k] - zeta_p[k]||^2 ≤ t_pq²   ∀ p ∈ P, q ∈ X
     for p in P:
         for q in X:
             lhs2 = xp.Sum(
@@ -64,16 +90,22 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
                 for k in range(d)
             )
             total.addConstraint(lhs2 <= tpq[p, q] ** 2)
+
+    # w_pq ≥ t_pq - M_p(1 - y_pq)   ∀ p ∈ P, q ∈ X
     for p in P:
         for q in X:
             total.addConstraint(wpq[p, q] >= tpq[p, q] - Mp[p] * (1 - ypq[p, q]))
+
+    # v_pq ≥ s_pq - M(1 - z_pq)   ∀ p < q ∈ X
     for p in X:
         for q in X:
             if p < q:
                 total.addConstraint(vpq[p, q] >= spq[p, q] - M * (1 - zpq[p, q]))
 
     # Problem solution
+    # We set the number of threads to 1 so that we can compare the runtime with the code using Benders decomposition.
     total.controls.threads = 1
+    #The maximum computation time is set to 2 hours.
     total.controls.maxtime = 7200
     total.solve()
     status = total.attributes.solstatus
@@ -94,7 +126,9 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
     return (ypq_solution, zpq_solution,xp_solution,LB)
 
 def plot_the_graph(coordinates_p,xp_solution,ypq_solution,zpq_solution,P,X,d,coordinate_columns):
-    #Building the plots
+    # This function builds the plot of the Steiner tree solution,
+    # distinguishing between 2D and 3D cases, and displaying an error message
+    # if the dimension is greater than 3.
     if d == 2:
         dim1, dim2 = coordinate_columns[:2]
         plt.figure(figsize=(8, 8))
@@ -172,7 +206,7 @@ def solve():
 
     file_name = sys.argv[1]
 
-    # Leggi il file
+    # Read files
     data = pd.read_csv(file_name, sep='\s+')
     data = data.drop(data.columns[0], axis=1)
     data = data.reset_index()
@@ -192,7 +226,7 @@ def solve():
     Mp = []
     ObjAbsAccuracy = 0.0001
 
-    # Calcolo Mp[p]
+    # Define M_P, the value of the first big-M
     for p in P:
         max_dist = 0
         for z in P:
@@ -204,7 +238,7 @@ def solve():
                     max_dist = distanza1
         Mp.append(max_dist)
 
-    # Calcolo M massimo globale
+    #Define M, the value for the second big-M constraint
     M = 0
     for p in P:
         for z in P:
@@ -227,7 +261,7 @@ def solve():
 
     end_time = time.time()
     execution_time = end_time - start_time
-    print(f"Tempo di esecuzione: {execution_time:.6f} secondi")
+    print(f"Time of execution: {execution_time:.6f} secondi")
     plot_the_graph(coordinates_p, xp_solution, ypq_solution, zpq_solution, P, X, d, coordinate_columns)
 
 
