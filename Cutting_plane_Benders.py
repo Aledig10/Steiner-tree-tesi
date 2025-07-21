@@ -35,6 +35,7 @@ import sys
 # Subproblem
 
 # Minimize:  sum_{p<q ∈ X} v_pq + sum_{p ∈ P, q ∈ X} w_pq
+#s.t
 # ||x_q - x_p||^2 ≤ s_pq²   ∀ p < q ∈ X
 # ||x_q[k] - zeta_p[k]||^2 ≤ t_pq²   ∀ p ∈ P, q ∈ X
 # w_pq ≥ t_pq - M_p(1 - y_pq)   ∀ p ∈ P, q ∈ X
