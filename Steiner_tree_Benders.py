@@ -6,7 +6,49 @@ import time
 import sys
 import pdb
 
+# In this Python file, we solve the Euclidean Steiner Tree problem using the Fampa-Maculan mathematical
+# programming model and using a Benders Branch and cut approach for the problem.
+# The mathematical programming model given by Fampa-Maculan is defined as follows:
+# Given a set P of terminal points, and setting the number of Steiner points equal
+# to the number of terminal points minus 2, the model is formulated as follows:
 
+# Minimize:  sum_{p<q ∈ X} v_pq + sum_{p ∈ P, q ∈ X} w_pq
+#s.t
+# sum_{q ∈ X} y_pq == 1   ∀ p ∈ P
+# sum_{p ∈ P} y_pq + sum_{p < q ∈ X} z_pq + sum_{p > q ∈ X} z_qp == 3   ∀ q ∈ X
+# sum_{p < q ∈ X} z_pq == 1   ∀ q ∈ X, q > 1
+# ||x_q - x_p||^2 ≤ s_pq²   ∀ p < q ∈ X
+# ||x_q[k] - zeta_p[k]||^2 ≤ t_pq²   ∀ p ∈ P, q ∈ X
+# w_pq ≥ t_pq - M_p(1 - y_pq)   ∀ p ∈ P, q ∈ X
+# v_pq ≥ s_pq - M(1 - z_pq)   ∀ p < q ∈ X
+# y_pq ∈ {0,1}  ∀ p ∈ P, q ∈ X
+# z_pq ∈ {0,1}  ∀ p,q ∈ X, p<q
+# x_p ∈  R^n
+
+#While the Master problem and the Subproblem of Benders decomposition are defined as follow:
+
+# Master problem
+
+# Minimize:  theta
+# s.t
+# sum_{q ∈ X} y_pq == 1   ∀ p ∈ P
+# sum_{p ∈ P} y_pq + sum_{p < q ∈ X} z_pq + sum_{p > q ∈ X} z_qp == 3   ∀ q ∈ X
+# sum_{p < q ∈ X} z_pq == 1   ∀ q ∈ X, q > 1
+# y_pq ∈ {0,1}  ∀ p ∈ P, q ∈ X
+# z_pq ∈ {0,1}  ∀ p,q ∈ X, p<q
+# Feasibility or Optimality cut
+
+# Subproblem
+
+# Minimize:  sum_{p<q ∈ X} v_pq + sum_{p ∈ P, q ∈ X} w_pq
+#s.t
+# ||x_q - x_p||^2 ≤ s_pq²   ∀ p < q ∈ X
+# ||x_q[k] - zeta_p[k]||^2 ≤ t_pq²   ∀ p ∈ P, q ∈ X
+# w_pq ≥ t_pq - M_p(1 - y_pq)   ∀ p ∈ P, q ∈ X
+# v_pq ≥ s_pq - M(1 - z_pq)   ∀ p < q ∈ X
+# x_p ∈  R^n
+
+#To implement the Benders Branch and cut approach we use 2 type of callbacks that are preintsol and optnode.
 
 class Callbacks:
     def __init__(self):
@@ -17,6 +59,11 @@ class Callbacks:
         self.solution_tuple=()
 
     def cb_preintsol(self,problem,data, soltype, cutoff):
+        #This callback allow us to declares a user integer solution callback function,
+        # called when an integer solution is found by heuristics or during the branch and bound search,
+        # but before it is accepted by the Optimizer.
+        # In particular in this function we create the cuts and we will store them, since in this callback
+        #is not possible to add cuts, and we update the cutoff with the value of the dsubproblem
         try:
             mindex=data[0]
             P=data[1]
@@ -29,23 +76,13 @@ class Callbacks:
             theta=data[8]
             coordinates_column=data[9]
             ObjAbsAccuracy=0.00001
-            print('===================== PREINTSOL ========================')
-            ypq_vals = problem.getCallbackSolution(list(ypq.values()))
+            ypq_vals = problem.getCallbackSolution(list(ypq.values())) #Save the value of ypq found
             ypq_solution = dict(zip(ypq.keys(), ypq_vals))
-            zpq_vals = problem.getCallbackSolution(list(zpq.values()))
+            zpq_vals = problem.getCallbackSolution(list(zpq.values())) #save the value of zpq found
             zpq_solution = dict(zip(zpq.keys(), zpq_vals))
-            print(ypq_vals)
-            (optimum, valori, duali) = subproblem(Mp, M, coordinates_p, ypq_solution, zpq_solution,X,P,coordinates_column)
-            (colind, cutcoef, rhs_final,index_y,index_z) = cut_generation(duali, coordinates_p, Mp, M,ypq,zpq, theta, P, X,coordinates_column)
-
-            cuttype = [1]
-            rowtype = ['L']
-            rhs = [rhs_final]
-            start = [0, len(colind)]
-            thetasol = problem.getCallbackSolution(theta)
-            print(f"Check cut condition: theta = {thetasol}, subproblem value = {optimum}, ObjAbsAccuracy = {ObjAbsAccuracy}")
+            (optimum, valori, duali) = subproblem(Mp, M, coordinates_p, ypq_solution, zpq_solution,X,P,coordinates_column) #solve the subproblem
+            thetasol = problem.getCallbackSolution(theta) #save the value of theta found
             if thetasol >= optimum - ObjAbsAccuracy:
-                print('===================== PREINTSOL : FALSE ========================')
                 return (False, optimum)
             else:
                 """
@@ -58,26 +95,36 @@ class Callbacks:
                     print("TAGLIO VIOLATO IN PREINTSOL")
                     #pdb.set_trace()
                 """
+                (colind, cutcoef, rhs_final, index_y, index_z) = cut_generation(duali, coordinates_p, Mp, M, ypq, zpq,
+                                                                                theta, P, X,
+                                                                                coordinates_column)  # generate the cut
+                cuttype = [1]
+                rowtype = ['L']
+                rhs = [rhs_final]
+                start = [0, len(colind)]
                 helplist = []
-                problem.storecuts(2, cuttype, rowtype, rhs, start, helplist, colind, cutcoef)
-                mindex.append(helplist[0])
+                problem.storecuts(2, cuttype, rowtype, rhs, start, helplist, colind, cutcoef) #save the cut in the helplist structure
+                mindex.append(helplist[0]) #add the cut in the mindex structure
                 if thetasol >= self.best_solution + ObjAbsAccuracy:
-                    self.best_solution = thetasol
+                    self.best_solution = thetasol #save best integer solution
                     soluzione = list(ypq_solution.values()) + list(zpq_solution.values()) + [optimum]
                     ypq_indices = [problem.getIndex(ypq[p, q]) for p in P for q in X]
                     zpq_indices = [problem.getIndex(zpq[p, q]) for p in X for q in X if p < q]
                     theta_index = problem.getIndex(theta)
                     indici = list(ypq_indices) + list(zpq_indices) + [theta_index]
-                    self.Integer_index.append(indici)
-                    self.Integer_solution.append(soluzione)
-                print('===================== PREINTSOL:TRUE ========================')
+                    self.Integer_index.append(indici) #save indexes of the solution
+                    self.Integer_solution.append(soluzione) #save solution
                 return (True, optimum)
         except Exception as e:
             print("ERRORE:", e)
 
     def cb_optnode(self,problem, data):
+        #This callback allow us to declares an optimal node callback function, called during the branch and bound search, after
+        #the LP relaxation has been solved for the current node, and after any internal cuts and
+        #heuristics have been applied, but before the Optimizer checks if the current node should be branched.
+        #In particular in this function we add the cuts stored in preintsol, generate new cuts from the resolution of subproblem
+        #and add integeer solution to the solver
         try:
-            print('===================== OPTNODE ========================')
             mindex=data[0]
             P=data[1]
             X=data[2]
@@ -89,43 +136,36 @@ class Callbacks:
             coordinates_column = data[9]
             ObjAbsAccuracy=0.00001
             coordinates_p=data[5]
-            ypq_vals = problem.getCallbackSolution(list(ypq.values()))
+            ypq_vals = problem.getCallbackSolution(list(ypq.values())) #Save values of ypq
             ypq_solution = dict(zip(ypq.keys(), ypq_vals))
-            zpq_vals = problem.getCallbackSolution(list(zpq.values()))
+            zpq_vals = problem.getCallbackSolution(list(zpq.values())) #save values of zpq
             zpq_solution = dict(zip(zpq.keys(), zpq_vals))
-            thetasol = problem.getCallbackSolution(theta)
+            thetasol = problem.getCallbackSolution(theta) #save values of theta
             for i, val in zip(self.Integer_index, self.Integer_solution):
-                print(i)
-                problem.addmipsol(val,i, 'From_preintsol')
+                problem.addmipsol(val,i, 'From_preintsol') #add integer solution that we found in preintsol to the solver
             del self.Integer_index[:]
             del self.Integer_solution[:]
             if len(mindex) > 0:
-                problem.loadcuts(0, -1, mindex)
-                print(len(mindex), " cuts added")
+                problem.loadcuts(0, -1, mindex) # load the cuts that were stored in preintsol
                 del mindex[:]
-            (optimum, valori, duali) = subproblem(Mp, M, coordinates_p, ypq_solution, zpq_solution,X,P,coordinates_column)
+            (optimum, valori, duali) = subproblem(Mp, M, coordinates_p, ypq_solution, zpq_solution,X,P,coordinates_column) #solve the subproblem
             soluzione = list(ypq_solution.values()) + list(zpq_solution.values()) + [optimum]
             ypq_indices = [problem.getIndex(ypq[p, q]) for p in P for q in X]
             zpq_indices = [problem.getIndex(zpq[p, q]) for p in X for q in X if p < q]
             theta_index = problem.getIndex(theta)
             indici = list(ypq_indices) + list(zpq_indices) + [theta_index]
-            integer = self.is_solution_integer(soluzione)
-
+            integer = self.is_solution_integer(soluzione) #Verify if the actual solution is integer
             if integer == True:
                 if thetasol >= self.best_solution + ObjAbsAccuracy:
-                    problem.addmipsol(soluzione, indici, 'from_optnode')
+                    problem.addmipsol(soluzione, indici, 'from_optnode') #add the integer solution found in optnode
                     self.best_solution = thetasol
-            print(f"Check cut condition: theta = {thetasol}, subproblem value = {optimum}, ObjAbsAccuracy = {ObjAbsAccuracy}")
-            if thetasol >= optimum - ObjAbsAccuracy:
-                print('===================== OPTNODE: EXIT ========================')
-            else:
-                (colind, cutcoef, rhs_final, index_y, index_z) = cut_generation(duali, coordinates_p, Mp,M,ypq,zpq, theta, P, X,coordinates_column)
+            if thetasol < optimum - ObjAbsAccuracy:
+                (colind, cutcoef, rhs_final, index_y, index_z) = cut_generation(duali, coordinates_p, Mp,M,ypq,zpq, theta, P, X,coordinates_column) #generate cut
                 cuttype = [1]
                 rowtype = ['L']
                 rhs = [rhs_final]
                 start = [0, len(colind)]
-                print(f"Prima dei tagli - LB: {problem.attributes.lpobjval}, Best: {problem.attributes.bestbound}")
-                problem.addcuts(cuttype, rowtype, rhs, start, colind, cutcoef)
+                problem.addcuts(cuttype, rowtype, rhs, start, colind, cutcoef) #add the cut to our problem
                 """
                     value=0
                     for j, (p,q) in enumerate(index_y):
@@ -138,16 +178,7 @@ class Callbacks:
                     """
                 #else:
                    # pdb.set_trace()
-            incumbent = problem.attributes.mipobjval
-            current_bound = problem.attributes.lpobjval
-            global_bound = problem.attributes.bestbound
-            print(f"UB: {incumbent}")
-            print(f"Current LB: {current_bound}")
-            print(f"Global LB: {global_bound}")
-            print(f"Gap corrente calcolato: {(problem.attributes.mipobjval - problem.attributes.bestbound) / abs(problem.attributes.mipobjval)}")
-            node = problem.attributes.currentnode
-            print(f"Node: {node}")
-            print('===================== OPTNODE: RIENTRO ========================')
+
             return 0
         except Exception as e:
             print("ERRORE:", e)
