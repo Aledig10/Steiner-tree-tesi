@@ -184,12 +184,14 @@ class Callbacks:
             print("ERRORE:", e)
 
     def is_solution_integer(self,valori, tolerance=1e-6):
+        #This function check if the solutiomn is integer
         for value in valori:
             if abs(value - round(value)) > tolerance:
                 return False
         return True
 
 def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
+    # in this function we solve the entire formulation of the problem
     xp_var = {
         k: {
             dim: xp.var(vartype=xp.continuous)
@@ -206,7 +208,7 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
 
     # problem creation
     total = xp.problem(name="Steiner Tree")
-    # Aggiunta delle variabili al modello
+    # Additive variable
     total.addVariable([xp_var[key] for key in xp_var])
     total.addVariable([ypq[key] for key in ypq])
     total.addVariable([zpq[key] for key in zpq])
@@ -216,12 +218,15 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
     total.addVariable([vpq[key] for key in vpq])
 
     # Objective function
+    # Minimize:  sum_{p<q ∈ X} v_pq + sum_{p ∈ P, q ∈ X} w_pq
     obj = (xp.Sum(vpq[p, q] for p in X for q in X if p < q) + xp.Sum(wpq[p, q] for p in P for q in X))
     total.setObjective(obj, sense=xp.minimize)
+    # sum_{q ∈ X} y_pq == 1   ∀ p ∈ P
 
     # Constraints
     for p in P:
         total.addConstraint(xp.Sum(ypq[p, q] for q in X) == 1)
+    # sum_{p ∈ P} y_pq + sum_{p < q ∈ X} z_pq + sum_{p > q ∈ X} z_qp == 3   ∀ q ∈ X
 
     for q in X:
         total.addConstraint(
@@ -229,13 +234,14 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
             + xp.Sum(zpq[p, q] for p in X if p < q)
             + xp.Sum(zpq[q, p] for p in X if p > q) == 3
         )
-
+    # sum_{p < q ∈ X} z_pq == 1   ∀ q ∈ X, q > 1
     for q in X:
         if q > 1:
             total.addConstraint(xp.Sum(zpq[p, q] for p in X if p < q) == 1)
 
-    for q in X:
-        total.addConstraint(xp.Sum(ypq[p, q] for p in P) <= 2)
+   # for q in X:
+    #    total.addConstraint(xp.Sum(ypq[p, q] for p in P) <= 2)
+    # ||x_q - x_p||^2 ≤ s_pq²   ∀ p < q ∈ X
 
     for p in X:
         for q in X:
@@ -245,7 +251,7 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
                     for k in range(d)
                 )
                 total.addConstraint(lhs <= spq[p, q] ** 2)
-
+    # ||x_q[k] - zeta_p[k]||^2 ≤ t_pq²   ∀ p ∈ P, q ∈ X
     # Vincoli tra punti dati (P) e Steiner
     for p in P:
         for q in X:
@@ -254,9 +260,11 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
                 for k in range(d)
             )
             total.addConstraint(lhs2 <= tpq[p, q] ** 2)
+    # w_pq ≥ t_pq - M_p(1 - y_pq)   ∀ p ∈ P, q ∈ X
     for p in P:
         for q in X:
             total.addConstraint(wpq[p, q] >= tpq[p, q] - Mp[p] * (1 - ypq[p, q]))
+    # v_pq ≥ s_pq - M(1 - z_pq)   ∀ p < q ∈ X
     for p in X:
         for q in X:
             if p < q:
@@ -267,7 +275,6 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
     status = total.getProbStatus()
     LB = total.getObjVal()
     print("LB", LB)
-    print(total.getProbStatusString())
     if status == xp.enums.MIPStatus.OPTIMAL:
         xp_solution = {key: total.getSolution(xp_var[key]) for key in xp_var}
         ypq_solution = {key: total.getSolution(ypq[key]) for key in ypq}
@@ -285,12 +292,13 @@ def MINLP_formulation(Mp,M,coordinates_p,X,P,d,coordinates_column):
 
 
 def subproblem(Mp,M,coordinates_p,ypq_values,zpq_values,X,P,coordinate_columns):
+    #In this function we are going to solve the subproblem
     subproblem = xp.problem(name="Subproblem")
     xp_var = {}
     for k in X:
         xp_var[k] = {}
         for dim in coordinate_columns:
-            xp_var[k][dim] = subproblem.addVariable(name=f"xp_{k}_{dim}", vartype=xp.continuous)
+            xp_var[k][dim] = subproblem.addVariable(name=f"xp_{k}_{dim}", vartype=xp.continuous) #variable that represent the position of the points
     spq = {(p, q): subproblem.addVariable(name=f"s_{p}_{q}",
                                           vartype=xp.continuous) for p in X for q in X if p < q}
     tpq = {(p, q): subproblem.addVariable(name=f"t_{p}_{q}",
@@ -384,6 +392,7 @@ def subproblem(Mp,M,coordinates_p,ypq_values,zpq_values,X,P,coordinate_columns):
 
 
 def cut_generation(duali,coordinates_p,Mp,M,ypq,zpq,theta,P,X,coordinate_columns):
+    #In this function we generate the terms needed for the optimality cut
     colind = []
     cutcoef = []
     rhs_constant = 0.0
@@ -526,18 +535,13 @@ def plot_the_graph(coordinates_p,xp_solution,ypq_solution,zpq_solution,P,X,d,coo
 
 
 def solve():
-    import pandas as pd
-    import numpy as np
-    import sys
-    import time
-
     start_time = time.time()
 
     file_name = sys.argv[1]
     type_resolution = sys.argv[2]
     print(type_resolution)
 
-    # Leggi il file
+    # Read the data from csv file
     data = pd.read_csv(file_name, sep='\s+')
     data = data.drop(data.columns[0], axis=1)
     data = data.reset_index()
@@ -557,7 +561,7 @@ def solve():
     Mp = []
     ObjAbsAccuracy = 0.00001
 
-    # Calcolo Mp[p]
+    # Define the first big-M constraint
     for p in P:
         max_dist = 0
         for z in P:
@@ -569,7 +573,7 @@ def solve():
                     max_dist = distanza1
         Mp.append(max_dist)
 
-    # Calcolo M massimo globale
+    # Define the second big-M constraint
     M = 0
     for p in P:
         for z in P:
@@ -641,13 +645,12 @@ def solve():
         if status == xp.enums.MIPStatus.OPTIMAL:
             ypq_solution=problem.getSolution(ypq)
             zpq_solution = problem.getSolution(zpq)
-
             print("Optimal solution found")
             print("ypq:", ypq_solution)
             print("zpq:", zpq_solution)
         else:
             print(f"Error status: {status}")
-        (optimum,valori,duali)=subproblem(Mp,M,coordinates_p,ypq_solution,zpq_solution,X, P,coordinate_columns)
+        (optimum,valori,duali)=subproblem(Mp,M,coordinates_p,ypq_solution,zpq_solution,X, P,coordinate_columns) #Solve the subproblem
         xp_solution = valori[0]
     end_time = time.time()
     execution_time = end_time - start_time
