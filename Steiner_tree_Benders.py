@@ -124,17 +124,13 @@ class Callbacks:
                 helplist = []
                 problem.storecuts(2, cuttype, rowtype, rhs, start, helplist, colind, cutcoef)
                 mindex.append(helplist[0])
-                print(optimum)
                 cutcoef.pop()
                 incumbent = problem.attributes.mipobjval
-                print(incumbent)
                 k,ordered = Cover_cut(incumbent, cutcoef, rhs_final)
                 if k != None:
                     indexes = [ordered[i][0] for i in range(k)]
                     colinds = [colind[idx] for idx in indexes]
-                    print(colinds)
                     cutcoef= [1 for i in range(k)]
-                    print(cutcoef)
                     cuttype = [1]
                     rowtype = ['L']
                     rhs = [k-1]
@@ -152,10 +148,6 @@ class Callbacks:
                     self.Integer_index.append(indici)
                     self.Integer_solution.append(soluzione)
                 print('===================== PREINTSOL:TRUE ========================')
-                if(self.iterations==14):
-                    print("ypq", ypq_solution)
-                    print("zpq",zpq_solution)
-                    print("theta",thetasol)
 
                 return (True, optimum)
         except Exception as e:
@@ -230,12 +222,10 @@ class Callbacks:
                 problem.addcuts(cuttype, rowtype, rhs, start, colind, cutcoef)
                 if integer == True:
                     incumbent = problem.attributes.mipobjval
-                    print(incumbent)
                     (k, ordered) = Cover_cut(incumbent, cutcoef, rhs_final)
                     if k != None:
                         indexes = [ordered[i][0] for i in range(k)]
                         colinds = [colind[idx] for idx in indexes]
-                        print(colinds)
                         cutcoef = [ordered[i][1] for i in range(k)]
                         cuttype = [1]
                         rowtype = ['L']
@@ -278,18 +268,13 @@ def Cover_cut(UB,coef,rhs):
     if UB>1000:
         return (None, [])
     else:
-        print(UB)
-        print("rhs", rhs)
         eps=1e-2
         coef_enumerate= list(enumerate(coef))
         ordered= sorted(coef_enumerate, key=lambda x: x[1])
         sum_coef=0
         for k in range(len(coef)):
             sum_coef+=ordered[k][1]
-            print(sum_coef)
             if sum_coef > eps+ UB+ rhs:
-                print(k+1)
-                print(ordered)
                 return (k+1, ordered)
         return(None,[])
 
